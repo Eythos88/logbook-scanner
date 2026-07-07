@@ -100,12 +100,12 @@ const EXTRACT_SCHEMA = {
 };
 
 const PROMPT =
-  'You are transcribing a handwritten log book page. Each row has a short TIME in the first ' +
-  'column and a longer plain-text DESCRIPTION of an event in the second column. Read EVERY row ' +
-  'from top to bottom. Transcribe the handwriting exactly as written — do not summarize, correct, ' +
-  'rephrase, or invent anything. If a word is illegible, write [?]. If the page shows a date ' +
-  '(often in a header), put it in "date" (use ISO YYYY-MM-DD if you can tell, otherwise copy it as ' +
-  'written); if there is no date, return an empty string. Return one object per row, in reading order.';
+  'You are transcribing a handwritten daily log / progress report page. Each row has a TIME in the ' +
+  'first column and a TASK DESCRIPTION in the second column. Read EVERY row from top to bottom. ' +
+  'Transcribe the handwriting exactly as written — do not summarize, correct, rephrase, or invent ' +
+  'anything. If a word is illegible, write [?]. If the page shows a date (often in a header), put it ' +
+  'in "date" (use ISO YYYY-MM-DD if you can tell, otherwise copy it as written); if there is no date, ' +
+  'return an empty string. Return one object per row, in reading order.';
 
 async function transcribe(base64){
   const res = await fetch(API_URL, {
@@ -185,7 +185,7 @@ function renderEntries(){
         `<input class="time" type="text" placeholder="Time" value="${esc(e.time)}" aria-label="Time">` +
         '<button class="del" aria-label="Delete row">×</button>' +
       '</div>' +
-      `<textarea rows="2" placeholder="Description">${esc(e.description)}</textarea>`;
+      `<textarea rows="2" placeholder="Task description">${esc(e.description)}</textarea>`;
     const [dateI, timeI] = card.querySelectorAll('input');
     const descT = card.querySelector('textarea');
     dateI.addEventListener('input', () => { e.date = dateI.value; saveEntries(); });
@@ -202,24 +202,56 @@ function autogrow(t){ t.style.height = 'auto'; t.style.height = Math.min(t.scrol
 function esc(s){ return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* ---------- export ---------- */
+// --- DOUS-DPR format: one sheet per day, tab named "Weekday.M.D.YYYY" (like the DPR workbook),
+//     columns TIME | TASK DESCRIPTION — so a day's scan drops straight into that day's tab. ---
+const WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function parseDate(s){
+  s = (s || '').trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);           // ISO YYYY-MM-DD
+  if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+  m = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})$/);     // M.D.YYYY / M/D/YYYY (US order, like the tabs)
+  if (m) return new Date(+m[3], +m[1]-1, +m[2]);
+  const t = Date.parse(s);
+  return isNaN(t) ? null : new Date(t);
+}
+function dateToSheetName(dateStr){
+  const d = parseDate(dateStr);
+  const name = d
+    ? `${WEEKDAYS[d.getDay()]}.${d.getMonth()+1}.${d.getDate()}.${d.getFullYear()}`
+    : ((dateStr || '').trim() || 'Undated');
+  return (name.replace(/[:\\/?*\[\]]/g, '-').slice(0, 31)) || 'Sheet';   // Excel sheet-name rules
+}
+
 async function exportXlsx(){
   if (entries.length === 0){ setStatus('Nothing to export yet.', 'err'); return; }
-  const aoa = [['Date', 'Time', 'Description'], ...entries.map(e => [e.date, e.time, e.description])];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 14 }, { wch: 10 }, { wch: 60 }];
+  // Group rows by their date, in first-seen order → one worksheet per day.
+  const groups = new Map();
+  for (const e of entries){
+    const k = (e.date || '').trim();
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(e);
+  }
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Log');
-  const name = `logbook-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const used = new Set();
+  for (const [dateKey, rows] of groups){
+    let name = dateToSheetName(dateKey), base = name, n = 2;
+    while (used.has(name.toLowerCase())){ name = base.slice(0, 27) + ' (' + n + ')'; n++; }   // avoid dup tab names
+    used.add(name.toLowerCase());
+    const ws = XLSX.utils.aoa_to_sheet([['TIME', 'TASK DESCRIPTION'], ...rows.map(e => [e.time, e.description])]);
+    ws['!cols'] = [{ wch: 10 }, { wch: 70 }];
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  }
+  const fname = `DPR-${new Date().toISOString().slice(0, 10)}.xlsx`;
   const blob = new Blob([XLSX.write(wb, { type: 'array', bookType: 'xlsx' })],
     { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const file = new File([blob], name, { type: blob.type });
+  const file = new File([blob], fname, { type: blob.type });
   // Phones: hand off to the share sheet (Save to Files / email) — iOS PWAs block
   // programmatic downloads. Desktop: a normal download. Only claim success on the path that ran.
   if (navigator.canShare && navigator.canShare({ files: [file] })){
-    try { await navigator.share({ files: [file], title: name }); setStatus('Shared — save it to Files, email, etc.', 'ok'); return; }
+    try { await navigator.share({ files: [file], title: fname }); setStatus('Shared — save it to Files, email, etc.', 'ok'); return; }
     catch (e){ if (e && e.name === 'AbortError') return; }   // user cancelled the share sheet
   }
-  downloadBlob(blob, name);
+  downloadBlob(blob, fname);
 }
 function downloadBlob(blob, name){
   const url = URL.createObjectURL(blob);
