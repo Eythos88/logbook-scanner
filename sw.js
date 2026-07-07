@@ -1,9 +1,9 @@
 /* Minimal service worker: cache the app shell so it installs and opens offline.
    API calls to api.anthropic.com are never cached — always go to the network. */
-const CACHE = 'logbook-v3';
+const CACHE = 'logbook-v4';
 const SHELL = [
   '.', 'index.html', 'app.js', 'manifest.webmanifest',
-  'vendor/xlsx.full.min.js',
+  'vendor/xlsx.bundle.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
 ];
 

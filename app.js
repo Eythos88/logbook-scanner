@@ -231,14 +231,28 @@ async function exportXlsx(){
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(e);
   }
+  // DPR styling: TIME (col A) centered; TASK DESCRIPTION merged across B:L, left-anchored.
+  const timeCell = { alignment: { horizontal: 'center', vertical: 'center' } };
+  const descCell = { alignment: { horizontal: 'left',   vertical: 'center', wrapText: true } };
+  const hdrCell  = { alignment: { horizontal: 'center', vertical: 'center' }, font: { bold: true } };
   const wb = XLSX.utils.book_new();
   const used = new Set();
   for (const [dateKey, rows] of groups){
     let name = dateToSheetName(dateKey), base = name, n = 2;
     while (used.has(name.toLowerCase())){ name = base.slice(0, 27) + ' (' + n + ')'; n++; }   // avoid dup tab names
     used.add(name.toLowerCase());
-    const ws = XLSX.utils.aoa_to_sheet([['TIME', 'TASK DESCRIPTION'], ...rows.map(e => [e.time, e.description])]);
-    ws['!cols'] = [{ wch: 10 }, { wch: 70 }];
+    const aoa = [['TIME', 'TASK DESCRIPTION'], ...rows.map(e => [e.time, e.description])];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const merges = [];
+    for (let r = 0; r < aoa.length; r++){
+      merges.push({ s: { r, c: 1 }, e: { r, c: 11 } });               // merge B:L on every row
+      const a = ws[XLSX.utils.encode_cell({ r, c: 0 })];              // col A — time
+      const b = ws[XLSX.utils.encode_cell({ r, c: 1 })];             // col B — merged description anchor
+      if (a) a.s = (r === 0) ? hdrCell : timeCell;
+      if (b) b.s = (r === 0) ? hdrCell : descCell;
+    }
+    ws['!merges'] = merges;
+    ws['!cols'] = [{ wch: 10 }].concat(Array.from({ length: 11 }, () => ({ wch: 9 })));   // A=10, B..L=9
     XLSX.utils.book_append_sheet(wb, ws, name);
   }
   const fname = `DPR-${new Date().toISOString().slice(0, 10)}.xlsx`;

@@ -18,11 +18,13 @@ becomes a spreadsheet with `Date | Time | Description` columns. Pages accumulate
   `anthropic-dangerous-direct-browser-access` header.
 - Your API key lives only in `localStorage` on your device — it is never in this code and never
   sent anywhere except to Anthropic to read your pages.
-- Excel export uses [SheetJS](https://sheetjs.com/) (vendored in `vendor/`). On phones the file
-  goes to the native share sheet; on desktop it downloads.
+- Excel export uses [xlsx-js-style](https://github.com/gitbrent/xlsx-js-style) (a styling-capable
+  SheetJS fork, vendored in `vendor/`) so the sheet matches the DPR layout: **TIME** centered in
+  column A, **TASK DESCRIPTION** merged across B:L and left-anchored, one sheet per day tab-named
+  `Weekday.M.D.YYYY`. On phones the file goes to the native share sheet; on desktop it downloads.
 
 ## Files
-`index.html` · `app.js` · `manifest.webmanifest` · `sw.js` · `icons/` · `vendor/xlsx.full.min.js`
+`index.html` · `app.js` · `manifest.webmanifest` · `sw.js` · `icons/` · `vendor/xlsx.bundle.js`
 
 ## Hosting
 Any static host over HTTPS works (HTTPS is required for the camera and for PWA install). This repo
