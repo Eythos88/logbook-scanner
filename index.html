@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Log Book Scanner</title>
+<meta name="theme-color" content="#20364e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Log Book">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<style>
+  :root{
+    --bg:#12151c; --panel:#1a1f29; --panel2:#151a23; --line:#28303d; --line2:#1f2632;
+    --ink:#e8eaef; --ink2:#9ba3b4; --ink3:#6b7385;
+    --accent:#3f8ae0; --accent-ink:#fff; --green:#3ba676; --red:#d0655f; --amber:#d69b4a;
+    --sans:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+    --mono:"Cascadia Code",ui-monospace,Consolas,monospace;
+    --safe-b:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;overscroll-behavior-y:contain}
+  body{max-width:680px;margin:0 auto;padding:0 14px calc(120px + var(--safe-b));line-height:1.5}
+  header{position:sticky;top:0;background:linear-gradient(var(--bg) 78%,transparent);
+    padding:16px 0 10px;z-index:5}
+  h1{font-size:19px;font-weight:700;margin:0;display:flex;align-items:center;gap:9px;letter-spacing:-.01em}
+  h1 .dot{width:10px;height:10px;border-radius:3px;background:var(--green)}
+  .sub{color:var(--ink2);font-size:12.5px;margin:3px 0 0}
+  button{font-family:inherit;font-size:15px;cursor:pointer;border:0;border-radius:10px;
+    padding:12px 16px;background:var(--panel);color:var(--ink);border:1px solid var(--line)}
+  button:active{transform:translateY(1px)}
+  .btn-primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;font-weight:600}
+  .btn-green{background:var(--green);color:#fff;border-color:transparent;font-weight:600}
+  .btn-ghost{background:transparent}
+  .row{display:flex;gap:10px;align-items:center}
+  .grow{flex:1}
+  .muted{color:var(--ink2);font-size:13px}
+  input,textarea{font-family:inherit;font-size:15px;color:var(--ink);background:var(--panel2);
+    border:1px solid var(--line);border-radius:9px;padding:10px 11px;width:100%}
+  textarea{resize:none;line-height:1.45}
+  label{font-size:12px;color:var(--ink3);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+  .hidden{display:none!important}
+
+  /* setup */
+  #setup .card{margin-top:8px}
+  .keyrow{display:flex;gap:8px}
+  .note{font-size:12px;color:var(--ink3);margin-top:9px;line-height:1.5}
+
+  /* capture */
+  .scan-wrap{display:flex;gap:10px;margin:6px 0 4px}
+  .scan-wrap .btn-primary{flex:1;padding:16px}
+  #status{min-height:20px;font-size:13.5px;margin:8px 2px 0}
+  #status.err{color:var(--red)} #status.ok{color:var(--green)} #status.work{color:var(--amber)}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--amber);
+    border-top-color:transparent;border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes s{to{transform:rotate(360deg)}}
+
+  /* entries */
+  .entries-head{display:flex;align-items:baseline;justify-content:space-between;margin:20px 2px 2px}
+  .entries-head h2{font-size:15px;margin:0}
+  .count{font-family:var(--mono);font-size:12px;color:var(--ink3)}
+  .entry{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px;margin:9px 0}
+  .entry .top{display:flex;gap:8px;align-items:center}
+  .entry .top .date{width:120px} .entry .top .time{width:88px}
+  .entry .top .del{margin-left:auto;background:transparent;border-color:var(--line2);color:var(--ink3);
+    padding:8px 11px;font-size:16px;line-height:1}
+  .entry textarea{margin-top:8px}
+  .empty{color:var(--ink3);text-align:center;padding:26px 10px;border:1px dashed var(--line);border-radius:12px;font-size:14px}
+
+  /* bottom bar */
+  .bar{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(transparent,var(--bg) 26%);
+    padding:14px 14px calc(14px + var(--safe-b));z-index:6}
+  .bar-inner{max-width:680px;margin:0 auto;display:flex;gap:10px}
+  .bar .btn-green{flex:1}
+  .link{color:var(--accent);background:none;border:0;font-size:13px;padding:6px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="dot"></span>Log Book Scanner</h1>
+  <p class="sub">Photograph a page → transcribe → export to Excel.</p>
+</header>
+
+<!-- API key setup -->
+<section id="setup" class="hidden">
+  <div class="card">
+    <label for="keyInput">Anthropic API key</label>
+    <div class="keyrow" style="margin-top:7px">
+      <input id="keyInput" type="password" inputmode="text" autocomplete="off" placeholder="sk-ant-...">
+      <button id="keySave" class="btn-primary">Save</button>
+    </div>
+    <p class="note">Stored only in this browser, on this device — never sent anywhere except directly to Anthropic to read your pages. Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>.</p>
+  </div>
+</section>
+
+<!-- main app -->
+<section id="app" class="hidden">
+  <div class="scan-wrap">
+    <button id="scanBtn" class="btn-primary">📷 Scan a page</button>
+    <button id="pickBtn" class="btn-ghost">Choose photo</button>
+  </div>
+  <input id="fileCam" class="hidden" type="file" accept="image/*" capture="environment">
+  <input id="filePick" class="hidden" type="file" accept="image/*">
+  <div id="status" aria-live="polite"></div>
+
+  <div class="entries-head">
+    <h2>Entries</h2>
+    <span class="count" id="count">0 rows</span>
+  </div>
+  <div id="entries"></div>
+  <div class="row" style="margin-top:10px">
+    <button id="addRow" class="btn-ghost grow">+ Add blank row</button>
+    <button id="clearAll" class="btn-ghost">Clear all</button>
+  </div>
+  <div style="text-align:center;margin-top:14px">
+    <button id="changeKey" class="link">Change API key</button>
+  </div>
+</section>
+
+<div class="bar">
+  <div class="bar-inner">
+    <button id="exportBtn" class="btn-green">⬇ Download Excel (.xlsx)</button>
+  </div>
+</div>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
