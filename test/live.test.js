@@ -27,5 +27,19 @@ const base64 = fs.readFileSync(img).toString('base64');
     if (over) bad++;
     console.log(`${DPR.fmtTime(r.time).padEnd(6)} RAW  ${r.raw}\n       DPR  ${r.clean}${over ? '   <-- OVER ' + DPR.LINE_MAX : ''}${r.unclear ? '   [unclear: ' + r.note + ']' : ''}${r.unknown_terms.length ? '   [unknown: ' + r.unknown_terms.join(', ') + ']' : ''}`);
   }
+  for (const r of rows) {
+    if (r.fix_text || r.fix_time || r.term_suggestions.length)
+      console.log(`  FIX ${DPR.fmtTime(r.time)}: text="${r.fix_text}" time="${r.fix_time}" terms=${JSON.stringify(r.term_suggestions)}`);
+  }
   console.log(rows.length, 'rows;', bad ? bad + ' over the line limit' : 'all within line limit');
+  // shorten the longest line with the app's exact shorten request
+  const longest = rows.slice().sort((a, b) => b.clean.length - a.clean.length)[0];
+  const sres = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: Object.assign({ 'x-api-key': key }, PROMPT.HEADERS),
+    body: JSON.stringify(PROMPT.buildShortenRequest({ line: longest.clean, kb: KB.KNOWLEDGE, styleExamples: KB.STYLE_EXAMPLES })) });
+  const sdata = await sres.json();
+  if (!sres.ok) { console.log('SHORTEN HTTP', sres.status, JSON.stringify(sdata.error)); process.exit(1); }
+  const short = JSON.parse(sdata.content.find(b => b.type === 'text').text).text;
+  console.log(`SHORTEN ${longest.clean.length} -> ${short.length} chars:
+  ${longest.clean}
+  ${short}`);
 })();

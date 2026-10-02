@@ -43,7 +43,7 @@ const $ = (id) => document.getElementById(id);
 const els = {};
 ['setup','app','keyInput','keySave','scanBtn','pickBtn','fileCam','filePick','status','entries','count',
  'addRow','clearDay','exportBtn','changeKey','dayInput','rovSelect','rovSheet','rovChoices','rovCancel',
- 'queueBar','queueText','retryBtn','rovList','kbAbbrev','kbField','kbRov','kbTooling','kbReset','kbShare','kbImport','kbFile','flagBox','flagTitle','flagList']
+ 'queueBar','queueText','retryBtn','rovList','kbAbbrev','kbField','kbRov','kbTooling','kbReset','kbShare','kbImport','kbFile','flagBox','flagTitle','flagList','fixAll','undoFix']
   .forEach(id => els[id] = $(id));
 
 /* ---------- status ---------- */
@@ -121,15 +121,12 @@ const qAdd = (p) => qOp('readwrite', st => st.put(p));
 const qDel = (id) => qOp('readwrite', st => st.delete(id));
 const qAll = () => qOp('readonly', st => st.getAll());
 
-async function readPage(base64, rov, day){
+async function callClaude(body, emptyMsg){
   const res = await fetch(API_URL, {
     method: 'POST',
     headers: Object.assign({ 'x-api-key': getKey(), 'anthropic-dangerous-direct-browser-access': 'true' }, PROMPT.HEADERS),
-    body: JSON.stringify(PROMPT.buildRequest({
-      base64, rov, day, earlier: dayEntries(day, rov), kb: settings.kb, styleExamples: KB.STYLE_EXAMPLES,
-    })),
+    body: JSON.stringify(body),
   });
-
   if (!res.ok){
     let detail = `HTTP ${res.status}`;
     try { const e = await res.json(); detail = e.error?.message || detail; } catch {}
@@ -137,13 +134,28 @@ async function readPage(base64, rov, day){
     const err = new Error(detail); err.retryable = res.status === 429 || res.status >= 500; throw err;
   }
   const data = await res.json();
-  if (data.stop_reason === 'refusal') throw new Error('The model declined to read this image.');
+  if (data.stop_reason === 'refusal') throw new Error('The model declined this request.');
   if (data.stop_reason === 'max_tokens')
     throw new Error('That page had too many entries to read in one pass. Photograph the top half and bottom half separately.');
   const textBlock = (data.content || []).find(b => b.type === 'text');
-  if (!textBlock) throw new Error('No transcription came back. Try a clearer photo.');
-  try { return JSON.parse(textBlock.text).rows || []; }
-  catch { throw new Error('Could not read the transcription — try a clearer, straighter photo.'); }
+  if (!textBlock) throw new Error(emptyMsg);
+  try { return JSON.parse(textBlock.text); }
+  catch { throw new Error(emptyMsg); }
+}
+
+async function readPage(base64, rov, day){
+  const out = await callClaude(PROMPT.buildRequest({
+    base64, rov, day, earlier: dayEntries(day, rov), kb: settings.kb, styleExamples: KB.STYLE_EXAMPLES,
+  }), 'Could not read the transcription — try a clearer, straighter photo.');
+  return out.rows || [];
+}
+
+async function shortenLine(e){
+  const list = dayEntries(e.day, e.rov), i = list.indexOf(e);
+  const out = await callClaude(PROMPT.buildShortenRequest({
+    line: e.text, before: list[i - 1]?.text, after: list[i + 1]?.text, kb: settings.kb, styleExamples: KB.STYLE_EXAMPLES,
+  }), 'No shorter version came back — try again.');
+  return String(out.text || '').trim();
 }
 
 /* ---------- scan flow: pick ROV → photo → queue → process ---------- */
@@ -206,6 +218,8 @@ async function processQueue(){
         id: uid(), rov: p.rov, day: p.day, time: DPR.fmtTime(r.time), raw: (r.raw || '').trim(),
         text: (r.clean || '').trim(), unclear: !!r.unclear, note: (r.note || '').trim(),
         unknown: (r.unknown_terms || []).filter(Boolean),
+        fixText: (r.fix_text || '').trim(), fixTime: DPR.parseTime(r.fix_time) == null ? '' : DPR.fmtTime(r.fix_time),
+        termSugg: (r.term_suggestions || []).filter(s => s && s.term),
       }));
       entries.push(...added); saveEntries();
       await qDel(p.id);
@@ -316,6 +330,103 @@ function renderEntries(){
   regrowAll();
 }
 
+/* ---------- recommended fixes ---------- */
+const GROUP_HEADER = {   // must match the headers in knowledge.js so a new term lands in the right group
+  keep: '# KEEP as abbreviations — equipment, systems and documents.',
+  write_out: '# WRITE OUT in full — operational shorthand.',
+};
+/** → { rec, btn, ai, apply() } or null. apply() changes the data; caller saves + re-renders. */
+function fixFor(e, f){
+  const list = () => dayEntries(e.day, e.rov);
+  if (f.kind === 'unclear'){
+    const parts = [];
+    if (e.fixText && e.fixText !== e.text) parts.push(`“${e.fixText}”`);
+    if (e.fixTime && e.fixTime !== e.time) parts.push(`time ${e.fixTime}`);
+    if (!parts.length) return { rec: 'Compare with the handwriting below the line, then tap OK.' };
+    return { rec: 'Suggested reading: ' + parts.join(', '), btn: 'Apply', apply(){
+      if (e.fixText) e.text = e.fixText;
+      if (e.fixTime) e.time = e.fixTime;
+      e.unclear = false;
+    } };
+  }
+  if (f.kind === 'unknown'){
+    const terms = stillUnknown(e).map(t => (e.termSugg || []).find(s => s.term.toLowerCase() === t.toLowerCase()) || { term: t, meaning: '?', group: 'keep' });
+    const desc = terms.map(s => `${s.term} = ${s.meaning}${s.meaning.trim().startsWith('?') ? '' : (s.group === 'write_out' ? ' (write out)' : ' (keep short)')}`).join('; ');
+    return { rec: `Add to master list: ${desc}` + (terms.some(s => s.meaning.trim().startsWith('?')) ? ' — fill in the meaning in Settings' : ''),
+      btn: 'Add', apply(){
+        for (const s of terms){
+          const r = KBMERGE.mergeSection(settings.kb.abbrev, `${GROUP_HEADER[s.group] || GROUP_HEADER.keep}\n${s.term} = ${s.meaning || '?'}`);
+          settings.kb.abbrev = r.text;
+        }
+        saveSettings(); renderSettings();
+      } };
+  }
+  if (f.kind === 'order'){
+    if (e.fixTime && e.fixTime !== e.time) return { rec: `Time may be misread — suggested ${e.fixTime}. Or move the line into time order.`, btn: `Use ${e.fixTime}`, apply(){ e.time = e.fixTime; } };
+    return { rec: 'Move this line into time order.', btn: 'Move', apply(){
+      const t = DPR.parseTime(e.time);
+      entries = entries.filter(x => x !== e);
+      const later = entries.find(x => x.day === e.day && x.rov === e.rov && DPR.parseTime(x.time) != null && DPR.parseTime(x.time) > t);
+      entries.splice(later ? entries.indexOf(later) : entries.length, 0, e);
+    } };
+  }
+  if (f.kind === 'time'){
+    if (e.fixTime) return { rec: `Suggested time: ${e.fixTime}`, btn: 'Apply', apply(){ e.time = e.fixTime; } };
+    return { rec: 'Type the time from the handwriting into the line below.' };
+  }
+  if (f.kind === 'long'){
+    return { rec: `Shorten to fit one line (${DPR.LINE_MAX} characters), keeping every fact.`, btn: 'Shorten', ai: true, async apply(){
+      const s = await shortenLine(e);
+      if (!s) throw new Error('No shorter version came back.');
+      e.text = s;
+    } };
+  }
+  return null;
+}
+
+let undoSnap = null;           // { entries, kb, label } — one level of undo for the last fix
+function snapshot(label){ undoSnap = { entries: JSON.stringify(entries), kb: JSON.stringify(settings.kb), label }; }
+function undoFix(){
+  if (!undoSnap) return;
+  entries = JSON.parse(undoSnap.entries); settings.kb = JSON.parse(undoSnap.kb);
+  undoSnap = null; saveEntries(); saveSettings(); renderSettings(); renderEntries();
+  setStatus('Fix undone.', 'ok');
+}
+async function runFix(fx, label){
+  snapshot(label);
+  try {
+    if (fx.ai) setStatus('Asking Claude for a shorter line…', 'work');
+    await fx.apply();
+    saveEntries(); renderEntries();
+    setStatus(`Fixed: ${label}`, 'ok');
+  } catch (err){
+    undoSnap = null;
+    renderFlagSummary();       // reset the button so the fix can be tried again
+    setStatus(err instanceof TypeError ? 'No connection — try the fix again when you have signal.' : (err.message || 'Fix failed.'), 'err');
+  }
+}
+async function applyAll(){
+  const todo = [];
+  for (const { e, outOfOrder } of cardState.values())
+    for (const f of flagsFor(e, outOfOrder)){ const fx = fixFor(e, f); if (fx && fx.btn) todo.push({ e, f, fx }); }
+  if (!todo.length) return;
+  const ai = todo.filter(t => t.fx.ai).length;
+  if (!confirm(`Apply ${todo.length} suggested fix${todo.length === 1 ? '' : 'es'}?` + (ai ? `\n\n${ai} of them ask Claude to shorten a line (needs signal).` : '') + '\n\nYou can undo this in one tap.')) return;
+  snapshot('all fixes');
+  let done = 0, failed = 0, why = '';
+  // moves last, so line order settles after times are fixed
+  todo.sort((x, y) => (x.f.kind === 'order') - (y.f.kind === 'order'));
+  for (const t of todo){
+    try {
+      if (t.f.kind === 'order' && !flagsFor(t.e, cardState.get(t.e.id)?.outOfOrder).some(f => f.kind === 'order')) continue;
+      if (t.fx.ai) setStatus(`Shortening line ${t.e.time}…`, 'work');
+      await t.fx.apply(); done++;
+    } catch (err){ failed++; why = err instanceof TypeError ? 'no connection' : (err.message || 'unknown error'); }
+  }
+  saveEntries(); renderEntries();
+  setStatus(`Applied ${done} fix${done === 1 ? '' : 'es'}` + (failed ? `; ${failed} could not be done (${why}).` : '.'), failed ? 'err' : 'ok');
+}
+
 /* ---------- flag summary box (top of page) ---------- */
 function renderFlagSummary(){
   const items = [];
@@ -324,24 +435,39 @@ function renderFlagSummary(){
   const hard = items.filter(x => !x.f.soft), soft = items.filter(x => x.f.soft);
   const lines = cardState.size;
   if (!lines){ els.flagBox.classList.add('hidden'); return; }
+  if (!items.length) els.fixAll.classList.add('hidden');
   els.flagBox.classList.remove('hidden');
   els.flagBox.classList.toggle('clear', hard.length === 0);
   const nLines = new Set(hard.map(x => x.e.id)).size;
   els.flagTitle.textContent = hard.length
     ? `${hard.length} flag${hard.length === 1 ? '' : 's'} on ${nLines} line${nLines === 1 ? '' : 's'} to check`
     : `All ${lines} line${lines === 1 ? '' : 's'} clear`;
+  const fixable = items.filter(x => { const fx = fixFor(x.e, x.f); return fx && fx.btn; }).length;
+  els.fixAll.classList.toggle('hidden', fixable < 2);
+  els.fixAll.textContent = `Apply all ${fixable} fixes`;
+  els.undoFix.classList.toggle('hidden', !undoSnap);
   els.flagList.innerHTML = '';
   for (const { e, f } of hard.concat(soft)){
     const li = document.createElement('li');
     li.className = f.soft ? 'soft' : '';
+    const fx = fixFor(e, f);
     li.innerHTML = `<button class="flag-go"><span class="flag-time">${esc(e.time || '--:--')}</span>` +
       `<span class="flag-why">${esc(f.text)}</span><span class="flag-line">${esc(e.text.slice(0, 60))}${e.text.length > 60 ? '…' : ''}</span></button>` +
-      (f.kind === 'unclear' || f.kind === 'unknown' ? '<button class="flag-ok" aria-label="Mark as checked">OK</button>' : '');
+      '<div class="flag-acts">' +
+        (fx && fx.btn ? `<button class="flag-fix">${esc(fx.btn)}</button>` : '') +
+        (f.kind === 'unclear' || f.kind === 'unknown' ? '<button class="flag-ok" aria-label="Mark as checked">OK</button>' : '') +
+      '</div>' +
+      (fx ? `<p class="flag-rec">${esc(fx.rec)}</p>` : '');
     li.querySelector('.flag-go').addEventListener('click', () => {
       const st = cardState.get(e.id); if (!st) return;
       st.card.scrollIntoView({ behavior: 'smooth', block: 'center' });
       st.card.classList.remove('pulse'); void st.card.offsetWidth; st.card.classList.add('pulse');
       setTimeout(() => st.card.querySelector('textarea').focus({ preventScroll: true }), 350);
+    });
+    const fixBtn = li.querySelector('.flag-fix');
+    if (fixBtn) fixBtn.addEventListener('click', async () => {
+      fixBtn.disabled = true; fixBtn.textContent = fx.ai ? 'Working…' : fixBtn.textContent;
+      await runFix(fx, `${e.time} ${f.text}`);
     });
     const ok = li.querySelector('.flag-ok');
     if (ok) ok.addEventListener('click', () => {
@@ -506,6 +632,8 @@ els.clearDay.addEventListener('click', () => {
   }
 });
 els.exportBtn.addEventListener('click', exportXlsx);
+els.fixAll.addEventListener('click', applyAll);
+els.undoFix.addEventListener('click', undoFix);
 els.rovList.addEventListener('change', () => {
   settings.rovs = els.rovList.value.split(/[,\n]/).map(s => s.trim().toUpperCase()).filter(Boolean);
   saveSettings(); renderSettings(); renderAll();

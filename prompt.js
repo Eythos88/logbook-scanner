@@ -18,8 +18,24 @@
             unclear: { type: 'boolean', description: 'true if any word, number, ID or time could not be read with confidence' },
             note: { type: 'string', description: 'short reason for the reviewer when unclear, else empty' },
             unknown_terms: { type: 'array', items: { type: 'string' }, description: 'abbreviations not in the master list and not obvious' },
+            fix_text: { type: 'string', description: 'when unclear: your best context-based reading of the whole line, for the reviewer to accept or reject; else empty' },
+            fix_time: { type: 'string', description: 'when the time is unreadable or out of sequence: your best HH:MM from the handwriting and neighbouring times; else empty' },
+            term_suggestions: {
+              type: 'array',
+              description: 'one per unknown_terms entry',
+              items: {
+                type: 'object',
+                properties: {
+                  term: { type: 'string' },
+                  meaning: { type: 'string', description: 'the standard offshore/ROV meaning if you are confident, else "?"' },
+                  group: { type: 'string', enum: ['keep', 'write_out'], description: 'keep = equipment/system/document name; write_out = operational shorthand' },
+                },
+                required: ['term', 'meaning', 'group'],
+                additionalProperties: false,
+              },
+            },
           },
-          required: ['time', 'raw', 'clean', 'unclear', 'note', 'unknown_terms'],
+          required: ['time', 'raw', 'clean', 'unclear', 'note', 'unknown_terms', 'fix_text', 'fix_time', 'term_suggestions'],
           additionalProperties: false,
         },
       },
@@ -47,6 +63,12 @@
       `- Keep each line at or under ${DPR.LINE_MAX} characters. Only go longer if the entry genuinely cannot be said in fewer; it will wrap onto a continuation row.`,
       '- NEVER add facts that are not in the handwriting: no new numbers, depths, IDs, names, causes, results or reasons. Context may clarify wording; it may not invent content. If the meaning is uncertain, stay close to the original wording and set unclear=true with a short note.',
       '- In the master list, "?" means the meaning is unknown: keep that term as written, do not guess its meaning.',
+      '- A legible term that is simply not in the master list goes in unknown_terms only. Do not also set unclear=true for it — unclear is for handwriting you could not read.',
+      '',
+      'Suggested fixes (the reviewer accepts or rejects these — they never go in "clean" on their own):',
+      '- fix_text: only when unclear=true. Your most likely reading of the whole line in the same formal style, using the rest of the page to resolve the hard-to-read part. Still no invented facts. Empty when there is nothing better to offer.',
+      '- fix_time: only when the time is unreadable, or plainly out of sequence with its neighbours (a likely misread digit). Your best HH:MM. Empty otherwise.',
+      '- term_suggestions: one per unknown term. Give the standard offshore/ROV meaning only if you are confident; otherwise "?".',
       '',
       '<master_list>',
       '## Abbreviations', kb.abbrev, '',
@@ -80,13 +102,39 @@
       output_config: { effort: 'high', format: { type: 'json_schema', schema: PAGE_SCHEMA } },
     };
   }
+  const SHORTEN_SCHEMA = {
+    type: 'object',
+    properties: { text: { type: 'string' } },
+    required: ['text'],
+    additionalProperties: false,
+  };
+  /** Request to shorten one DPR line to fit, keeping every fact. Text only (no image). */
+  function buildShortenRequest({ line, before, after, kb, styleExamples }){
+    return {
+      model: MODEL,
+      max_tokens: 4000,
+      system: systemPrompt(kb, styleExamples),
+      fallbacks: 'default',
+      messages: [{
+        role: 'user',
+        content: `Shorten this DPR line to at most ${DPR.LINE_MAX} characters, in the same formal style. ` +
+          'Keep every fact: every number, ID, name, action and result. Remove only filler words, and use master-list abbreviations under KEEP if that helps. ' +
+          'Return just the new line.\n\n' +
+          (before ? `Line before (context): ${before}\n` : '') +
+          `LINE: ${line}\n` +
+          (after ? `Line after (context): ${after}\n` : ''),
+      }],
+      output_config: { effort: 'medium', format: { type: 'json_schema', schema: SHORTEN_SCHEMA } },
+    };
+  }
+
   const HEADERS = {
     'content-type': 'application/json',
     'anthropic-version': '2023-06-01',
     'anthropic-beta': 'server-side-fallback-2026-07-01',
   };
 
-  const api = { MODEL, PAGE_SCHEMA, systemPrompt, buildRequest, HEADERS };
+  const api = { MODEL, PAGE_SCHEMA, systemPrompt, buildRequest, buildShortenRequest, HEADERS };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.PROMPT = api;
 })(typeof self !== 'undefined' ? self : this);

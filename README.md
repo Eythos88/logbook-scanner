@@ -36,7 +36,7 @@ becomes a spreadsheet with `Date | Time | Description` columns. Pages accumulate
 - `node test/export.test.js` — format rules + writes `test/out.xlsx`
 - `python test/compare_master.py "<path to master .xlsm>"` — checks `out.xlsx` formatting cell-by-cell against the master
 - `node test/merge.test.js` — master-list merge rules (add missing, fill "?", never overwrite)
-- `node test/live.test.js <keyfile>` — one real Claude call on `test/fixtures/page1.jpg` (synthetic page; ~6¢)
+- `node test/live.test.js <keyfile> [image]` — real Claude calls: read a page (default `test/fixtures/page1.jpg`; `page2.jpg` has a smudged word/time, an unknown term and a long line) + shorten the longest line (~8¢)
 
 ## Hosting
 Any static host over HTTPS works (HTTPS is required for the camera and for PWA install). This repo

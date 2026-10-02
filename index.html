@@ -117,7 +117,7 @@
   .flagbox.clear{border-color:var(--green);background:rgba(59,166,118,.07)}
   .flagbox h2{font-size:14.5px;margin:0;color:var(--amber)}
   .flagbox.clear h2{color:var(--green)}
-  .flagbox ul{list-style:none;margin:8px 0 0;padding:0;max-height:260px;overflow-y:auto}
+  .flagbox ul{list-style:none;margin:8px 0 0;padding:0;max-height:340px;overflow-y:auto}
   .flagbox ul:empty{display:none}
   .flagbox li{display:flex;gap:6px;align-items:stretch;margin:6px 0}
   .flag-go{flex:1;min-width:0;text-align:left;display:grid;grid-template-columns:auto 1fr;gap:1px 10px;padding:8px 10px;
@@ -127,6 +127,16 @@
   .flag-why{font-size:13px;color:var(--amber)}
   .flag-line{font-size:12px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .flagbox li.soft .flag-why{color:var(--ink2)}
+  .flag-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .flag-head h2{flex:1;min-width:140px}
+  .flag-head button{padding:7px 11px;font-size:13px;font-weight:600;transition:border-color .15s}
+  #fixAll{color:var(--accent);border-color:var(--accent)}
+  .flagbox li{flex-wrap:wrap}
+  .flag-acts{display:flex;gap:6px}
+  .flag-fix{padding:0 12px;font-size:13px;font-weight:600;color:#fff;background:var(--accent);border-color:transparent;transition:filter .15s}
+  .flag-fix:hover,.flag-fix:focus-visible{filter:brightness(1.12)}
+  .flag-fix:disabled{opacity:.6}
+  .flag-rec{flex-basis:100%;margin:2px 2px 0;font-size:12.5px;color:var(--ink2);line-height:1.4}
   .flag-ok{padding:0 12px;font-size:13px;font-weight:600;color:var(--green);transition:border-color .15s}
   .flag-ok:hover,.flag-ok:focus-visible{border-color:var(--green)}
   .entry.pulse{animation:pulse 1.1s ease-out}
@@ -167,7 +177,11 @@
   <div id="status" aria-live="polite"></div>
   <div id="queueBar" class="queue hidden"><span id="queueText"></span><button id="retryBtn" class="btn-ghost">Retry</button></div>
   <section id="flagBox" class="flagbox hidden" aria-live="polite">
-    <h2 id="flagTitle"></h2>
+    <div class="flag-head">
+      <h2 id="flagTitle"></h2>
+      <button id="undoFix" class="btn-ghost hidden">Undo</button>
+      <button id="fixAll" class="btn-ghost hidden"></button>
+    </div>
     <ul id="flagList"></ul>
   </section>
 
@@ -212,12 +226,12 @@
 </div>
 
 <!-- ?v= must match VERSION in sw.js: a new page always loads its own scripts, never a cached older set -->
-<script src="vendor/xlsx.bundle.js?v=11"></script>
-<script src="dpr.js?v=11"></script>
-<script src="knowledge.js?v=11"></script>
-<script src="prompt.js?v=11"></script>
-<script src="kbmerge.js?v=11"></script>
-<script src="app.js?v=11"></script>
+<script src="vendor/xlsx.bundle.js?v=12"></script>
+<script src="dpr.js?v=12"></script>
+<script src="knowledge.js?v=12"></script>
+<script src="prompt.js?v=12"></script>
+<script src="kbmerge.js?v=12"></script>
+<script src="app.js?v=12"></script>
 <script>
   // Self-heal: if the app didn't start (e.g. a half-updated cache), wipe caches and reload once.
   if (!window.__appBooted && !sessionStorage.getItem('lb_healed')) {
