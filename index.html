@@ -78,12 +78,47 @@
   .bar .btn-green{flex:1}
   .link{color:var(--accent);background:none;border:0;font-size:13px;padding:6px}
   a{color:var(--accent)}
+
+  /* filter, queue, flags, sheet, settings */
+  .filter{display:flex;gap:10px;margin:4px 0 10px}
+  .filter .field{flex:1}
+  .field{display:flex;flex-direction:column;gap:5px;margin:10px 0}
+  select{font-family:inherit;font-size:15px;color:var(--ink);background:var(--panel2);border:1px solid var(--line);
+    border-radius:9px;padding:10px 11px;width:100%}
+  input[type=date]{color-scheme:dark}
+  .queue{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;padding:8px 10px;
+    border:1px solid var(--amber);border-radius:10px;color:var(--amber);font-size:13.5px}
+  .queue button{padding:8px 12px;font-size:14px}
+  .entry.flagged{border-color:var(--amber)}
+  .entry .top .time{width:92px;font-family:var(--mono)}
+  .len{font-family:var(--mono);font-size:12px;color:var(--ink3)}
+  .len.over{color:var(--red)}
+  .flags{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+  .flags:empty{display:none}
+  .flag{font-size:12.5px;color:var(--amber);background:rgba(214,155,74,.1);border-radius:6px;padding:3px 7px}
+  .flag.soft{color:var(--ink2);background:rgba(155,163,180,.1)}
+  .raw{margin-top:7px;font-size:13px;color:var(--ink2)}
+  .raw summary{cursor:pointer;color:var(--ink3);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+  .raw p{margin:5px 0 0;font-style:italic}
+  .sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+  .sheet-panel{background:var(--panel);border:1px solid var(--line);border-radius:16px 16px 0 0;width:100%;max-width:680px;
+    padding:18px 16px calc(18px + var(--safe-b));animation:up .18s ease-out}
+  @keyframes up{from{transform:translateY(24px);opacity:.4}}
+  @media (prefers-reduced-motion:reduce){.sheet-panel{animation:none}}
+  .sheet-panel h3{margin:0 0 12px;font-size:16px}
+  .rov-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+  .rov-choice{padding:20px 10px;font-size:20px;font-weight:700;font-family:var(--mono)}
+  .rov-choice.current{border-color:var(--accent)}
+  .settings{margin-top:22px;border-top:1px solid var(--line);padding-top:12px}
+  .settings summary{cursor:pointer;font-weight:600;font-size:15px;padding:6px 0}
+  .settings textarea{font-family:var(--mono);font-size:13px}
+  code{font-family:var(--mono);font-size:12px}
 </style>
 </head>
 <body>
 <header>
   <h1><span class="dot"></span>Log Book Scanner</h1>
-  <p class="sub">Photograph a page → transcribe → export to Excel.</p>
+  <p class="sub">Photo of the log → clean DPR lines → paste into the master.</p>
 </header>
 
 <!-- API key setup -->
@@ -100,35 +135,60 @@
 
 <!-- main app -->
 <section id="app" class="hidden">
+  <div class="filter">
+    <div class="field"><label for="dayInput">DPR day</label><input id="dayInput" type="date"></div>
+    <div class="field"><label for="rovSelect">ROV</label><select id="rovSelect"></select></div>
+  </div>
   <div class="scan-wrap">
-    <button id="scanBtn" class="btn-primary">📷 Scan a page</button>
+    <button id="scanBtn" class="btn-primary">Scan a page</button>
     <button id="pickBtn" class="btn-ghost">Choose photo</button>
   </div>
   <input id="fileCam" class="hidden" type="file" accept="image/*" capture="environment">
   <input id="filePick" class="hidden" type="file" accept="image/*">
   <div id="status" aria-live="polite"></div>
+  <div id="queueBar" class="queue hidden"><span id="queueText"></span><button id="retryBtn" class="btn-ghost">Retry</button></div>
 
   <div class="entries-head">
-    <h2>Entries</h2>
-    <span class="count" id="count">0 rows</span>
+    <h2>Lines</h2>
+    <span class="count" id="count">0 lines</span>
   </div>
   <div id="entries"></div>
   <div class="row" style="margin-top:10px">
-    <button id="addRow" class="btn-ghost grow">+ Add blank row</button>
-    <button id="clearAll" class="btn-ghost">Clear all</button>
+    <button id="addRow" class="btn-ghost grow">+ Add blank line</button>
+    <button id="clearDay" class="btn-ghost">Clear day</button>
   </div>
-  <div style="text-align:center;margin-top:14px">
-    <button id="changeKey" class="link">Change API key</button>
-  </div>
+
+  <details class="settings">
+    <summary>Settings &amp; master list</summary>
+    <div class="field"><label for="rovList">ROVs (comma separated)</label><input id="rovList" type="text" autocapitalize="characters"></div>
+    <p class="note">The master list is what the cleanup uses to get your terms right. One term per line, <code>TERM = meaning</code>. Use <code>?</code> where the meaning isn't known yet; the app will leave that term as written.</p>
+    <div class="field"><label for="kbAbbrev">Abbreviations</label><textarea id="kbAbbrev" rows="8" spellcheck="false"></textarea></div>
+    <div class="field"><label for="kbField">Field &amp; structure terms</label><textarea id="kbField" rows="6" spellcheck="false"></textarea></div>
+    <div class="field"><label for="kbRov">General ROV knowledge</label><textarea id="kbRov" rows="6" spellcheck="false"></textarea></div>
+    <div class="field"><label for="kbTooling">General ROV tooling</label><textarea id="kbTooling" rows="5" spellcheck="false"></textarea></div>
+    <div class="row"><button id="kbReset" class="btn-ghost">Reset master list</button><button id="changeKey" class="btn-ghost">Change API key</button></div>
+  </details>
 </section>
+
+<!-- ROV picker: asked before every photo -->
+<div id="rovSheet" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="rovSheetTitle">
+  <div class="sheet-panel">
+    <h3 id="rovSheetTitle">Which ROV is this log for?</h3>
+    <div id="rovChoices" class="rov-grid"></div>
+    <button id="rovCancel" class="btn-ghost" style="width:100%;margin-top:10px">Cancel</button>
+  </div>
+</div>
 
 <div class="bar">
   <div class="bar-inner">
-    <button id="exportBtn" class="btn-green">⬇ Download Excel (.xlsx)</button>
+    <button id="exportBtn" class="btn-green">Export to Excel</button>
   </div>
 </div>
 
 <script src="vendor/xlsx.bundle.js"></script>
+<script src="dpr.js"></script>
+<script src="knowledge.js"></script>
+<script src="prompt.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
