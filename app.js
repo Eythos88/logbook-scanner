@@ -43,7 +43,7 @@ const $ = (id) => document.getElementById(id);
 const els = {};
 ['setup','app','keyInput','keySave','scanBtn','pickBtn','fileCam','filePick','status','entries','count',
  'addRow','clearDay','exportBtn','changeKey','dayInput','rovSelect','rovSheet','rovChoices','rovCancel',
- 'queueBar','queueText','retryBtn','rovList','kbAbbrev','kbField','kbRov','kbTooling','kbReset']
+ 'queueBar','queueText','retryBtn','rovList','kbAbbrev','kbField','kbRov','kbTooling','kbReset','kbShare','kbImport','kbFile']
   .forEach(id => els[id] = $(id));
 
 /* ---------- status ---------- */
@@ -311,6 +311,46 @@ function renderSettings(){
 }
 function bindKb(el, key){ el.addEventListener('input', () => { settings.kb[key] = el.value; saveSettings(); }); }
 
+/* ---------- share / import the master list (file passed phone to phone — never online) ---------- */
+const KB_FILE_TYPE = 'logbook-master-list';
+const KB_KEYS = ['abbrev', 'field', 'rov', 'tooling'];
+const KB_LABELS = { abbrev: 'Abbreviations', field: 'Field & structure terms', rov: 'General ROV knowledge', tooling: 'General ROV tooling' };
+const termCount = (t) => String(t || '').split('\n').filter(l => l.includes('=')).length;
+
+async function shareKb(){
+  const data = { type: KB_FILE_TYPE, version: 1, exported: new Date().toISOString(), rovs: settings.rovs, kb: settings.kb };
+  const fname = `master-list-${todayIso()}.json`;
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const file = new File([blob], fname, { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })){
+    try { await navigator.share({ files: [file], title: 'DPR master list' }); setStatus('Master list shared.', 'ok'); return; }
+    catch (e){ if (e && e.name === 'AbortError') return; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = fname;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  setStatus(`${fname} saved — send it to the other phone.`, 'ok');
+}
+
+async function importKb(file){
+  if (!file) return;
+  let data;
+  try { data = JSON.parse(await file.text()); } catch { data = null; }
+  if (!data || data.type !== KB_FILE_TYPE || !data.kb || !KB_KEYS.every(k => typeof data.kb[k] === 'string')){
+    setStatus('That file is not a master list from this app.', 'err'); return;
+  }
+  const summary = KB_KEYS.map(k => `${KB_LABELS[k]}: ${termCount(data.kb[k])} terms`).join('\n');
+  const when = data.exported ? ` (shared ${String(data.exported).slice(0, 10)})` : '';
+  if (!confirm(`Replace YOUR master list with this one${when}?\n\n${summary}\n\nYour current list will be overwritten.`)) return;
+  for (const k of KB_KEYS) settings.kb[k] = data.kb[k];
+  settings.seed = KB.SEED_VERSION;                       // imported list is never auto-replaced by a new starter list
+  const rovs = Array.isArray(data.rovs) ? data.rovs.map(r => String(r).trim().toUpperCase()).filter(Boolean) : [];
+  if (rovs.length && rovs.join(',') !== settings.rovs.join(',') && confirm(`Also use their ROV list: ${rovs.join(', ')}?`)) settings.rovs = rovs;
+  saveSettings(); renderSettings(); renderAll();
+  setStatus('Master list imported.', 'ok');
+}
+
 /* ---------- export: rows only, master format ---------- */
 const WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 function isoFromAny(s){
@@ -389,6 +429,9 @@ els.rovList.addEventListener('change', () => {
   saveSettings(); renderSettings(); renderAll();
 });
 bindKb(els.kbAbbrev, 'abbrev'); bindKb(els.kbField, 'field'); bindKb(els.kbRov, 'rov'); bindKb(els.kbTooling, 'tooling');
+els.kbShare.addEventListener('click', shareKb);
+els.kbImport.addEventListener('click', () => els.kbFile.click());
+els.kbFile.addEventListener('change', e => { importKb(e.target.files[0]); e.target.value = ''; });
 els.kbReset.addEventListener('click', () => {
   if (confirm('Reset the master list to the starter version? Your edits will be lost.')){
     settings.kb = Object.assign({}, KB.KNOWLEDGE); saveSettings(); renderSettings();
