@@ -43,7 +43,7 @@ const $ = (id) => document.getElementById(id);
 const els = {};
 ['setup','app','keyInput','keySave','scanBtn','pickBtn','fileCam','filePick','status','entries','count',
  'addRow','clearDay','exportBtn','changeKey','dayInput','rovSelect','rovSheet','rovChoices','rovCancel',
- 'queueBar','queueText','retryBtn','rovList','kbAbbrev','kbField','kbRov','kbTooling','kbReset','kbShare','kbImport','kbFile']
+ 'queueBar','queueText','retryBtn','rovList','kbAbbrev','kbField','kbRov','kbTooling','kbReset','kbShare','kbImport','kbFile','flagBox','flagTitle','flagList']
   .forEach(id => els[id] = $(id));
 
 /* ---------- status ---------- */
@@ -240,11 +240,33 @@ function renderAll(){
   els.exportBtn.textContent = `Export ${view.rov || ''} ${sheetName(view.day)} to Excel`;
 }
 
+// unknown terms stop being flagged once they've been added to the master list
+function stillUnknown(e){
+  const kb = Object.values(settings.kb).join('\n').toLowerCase();
+  const re = (t) => new RegExp('^\\s*' + t.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*=', 'm');
+  return (e.unknown || []).filter(t => !re(t).test(kb));
+}
+/** Every flag on a line → [{ text, kind, soft }]. kind 'unclear' / 'unknown' can be dismissed. */
+function flagsFor(e, outOfOrder){
+  const f = [];
+  const unk = stillUnknown(e);
+  if (e.unclear) f.push({ kind: 'unclear', text: `Check: ${e.note || 'part of this was hard to read'}` });
+  if (unk.length) f.push({ kind: 'unknown', text: `Not in master list: ${unk.join(', ')}` });
+  if (outOfOrder) f.push({ kind: 'order', text: 'Time is earlier than the line above' });
+  if (DPR.parseTime(e.time) == null) f.push({ kind: 'time', text: 'Time not readable' });
+  if (e.text.trim().length > DPR.LINE_MAX) f.push({ kind: 'long', soft: true, text: 'Over the line limit — exports as an XXXX continuation row' });
+  return f;
+}
+
+let cardState = new Map();   // entry id → { e, card, outOfOrder, paint }
+
 function renderEntries(){
   const list = dayEntries(view.day, view.rov);
   els.count.textContent = `${list.length} line${list.length === 1 ? '' : 's'}`;
+  cardState = new Map();
   if (list.length === 0){
     els.entries.innerHTML = '<div class="empty">No lines for this ROV and day yet. Tap Scan a page.</div>';
+    renderFlagSummary();
     return;
   }
   els.entries.innerHTML = '';
@@ -255,7 +277,8 @@ function renderEntries(){
     if (t != null) prevT = t;
 
     const card = document.createElement('div');
-    card.className = 'entry' + (e.unclear || e.unknown.length || outOfOrder ? ' flagged' : '');
+    card.className = 'entry';
+    card.id = 'line-' + e.id;
     card.innerHTML =
       '<div class="top">' +
         `<input class="time" type="text" inputmode="numeric" placeholder="HH:MM" value="${esc(e.time)}" aria-label="Time">` +
@@ -274,25 +297,59 @@ function renderEntries(){
       const n = descT.value.trim().length;
       len.textContent = `${n}/${DPR.LINE_MAX}`;
       len.className = 'len' + (n > DPR.LINE_MAX ? ' over' : '');
-      const f = [];
-      if (e.unclear) f.push(`<span class="flag">Check: ${esc(e.note || 'part of this was hard to read')}</span>`);
-      if (e.unknown.length) f.push(`<span class="flag">Not in master list: ${esc(e.unknown.join(', '))}</span>`);
-      if (outOfOrder) f.push('<span class="flag">Time is earlier than the line above</span>');
-      if (DPR.parseTime(timeI.value) == null) f.push('<span class="flag">Time not readable</span>');
-      if (n > DPR.LINE_MAX) f.push('<span class="flag soft">Over the line limit — exports as an XXXX continuation row</span>');
-      flags.innerHTML = f.join('');
+      const f = flagsFor(e, outOfOrder);
+      flags.innerHTML = f.map(x => `<span class="flag${x.soft ? ' soft' : ''}">${esc(x.text)}</span>`).join('');
+      card.classList.toggle('flagged', f.some(x => !x.soft));
     };
     timeI.addEventListener('change', () => { e.time = DPR.fmtTime(timeI.value); timeI.value = e.time; saveEntries(); renderEntries(); });
-    descT.addEventListener('input', () => { e.text = descT.value; autogrow(descT); paint(); saveEntries(); });
+    descT.addEventListener('input', () => { e.text = descT.value; autogrow(descT); paint(); saveEntries(); renderFlagSummary(); });
     card.querySelector('.del').addEventListener('click', () => {
       entries = entries.filter(x => x.id !== e.id); saveEntries(); renderEntries();
     });
     // reviewing a flagged line and editing it clears the "unclear" flag
-    descT.addEventListener('change', () => { if (e.unclear){ e.unclear = false; saveEntries(); paint(); } });
+    descT.addEventListener('change', () => { if (e.unclear){ e.unclear = false; saveEntries(); paint(); renderFlagSummary(); } });
     els.entries.appendChild(card);
+    cardState.set(e.id, { e, card, outOfOrder, paint });
     paint();
   }
+  renderFlagSummary();
   regrowAll();
+}
+
+/* ---------- flag summary box (top of page) ---------- */
+function renderFlagSummary(){
+  const items = [];
+  for (const { e, outOfOrder } of cardState.values())
+    for (const f of flagsFor(e, outOfOrder)) items.push({ e, f });
+  const hard = items.filter(x => !x.f.soft), soft = items.filter(x => x.f.soft);
+  const lines = cardState.size;
+  if (!lines){ els.flagBox.classList.add('hidden'); return; }
+  els.flagBox.classList.remove('hidden');
+  els.flagBox.classList.toggle('clear', hard.length === 0);
+  const nLines = new Set(hard.map(x => x.e.id)).size;
+  els.flagTitle.textContent = hard.length
+    ? `${hard.length} flag${hard.length === 1 ? '' : 's'} on ${nLines} line${nLines === 1 ? '' : 's'} to check`
+    : `All ${lines} line${lines === 1 ? '' : 's'} clear`;
+  els.flagList.innerHTML = '';
+  for (const { e, f } of hard.concat(soft)){
+    const li = document.createElement('li');
+    li.className = f.soft ? 'soft' : '';
+    li.innerHTML = `<button class="flag-go"><span class="flag-time">${esc(e.time || '--:--')}</span>` +
+      `<span class="flag-why">${esc(f.text)}</span><span class="flag-line">${esc(e.text.slice(0, 60))}${e.text.length > 60 ? '…' : ''}</span></button>` +
+      (f.kind === 'unclear' || f.kind === 'unknown' ? '<button class="flag-ok" aria-label="Mark as checked">OK</button>' : '');
+    li.querySelector('.flag-go').addEventListener('click', () => {
+      const st = cardState.get(e.id); if (!st) return;
+      st.card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      st.card.classList.remove('pulse'); void st.card.offsetWidth; st.card.classList.add('pulse');
+      setTimeout(() => st.card.querySelector('textarea').focus({ preventScroll: true }), 350);
+    });
+    const ok = li.querySelector('.flag-ok');
+    if (ok) ok.addEventListener('click', () => {
+      if (f.kind === 'unclear') e.unclear = false; else e.unknown = [];
+      saveEntries(); cardState.get(e.id)?.paint(); renderFlagSummary();
+    });
+    els.flagList.appendChild(li);
+  }
 }
 function autogrow(t){ t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }
 // first layout happens after render (and fonts can reflow it), so size every box again once it has
@@ -309,7 +366,10 @@ function renderSettings(){
   els.kbRov.value = settings.kb.rov;
   els.kbTooling.value = settings.kb.tooling;
 }
-function bindKb(el, key){ el.addEventListener('input', () => { settings.kb[key] = el.value; saveSettings(); }); }
+function bindKb(el, key){
+  el.addEventListener('input', () => { settings.kb[key] = el.value; saveSettings(); });
+  el.addEventListener('change', renderEntries);    // a newly added term clears its "not in master list" flags
+}
 
 /* ---------- share / import the master list (file passed phone to phone — never online) ---------- */
 const KB_FILE_TYPE = 'logbook-master-list';
