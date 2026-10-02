@@ -21,6 +21,13 @@ function uid(){ return (self.crypto && crypto.randomUUID) ? crypto.randomUUID()
 function todayIso(){ const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); }
 
 const settings = Object.assign({ rovs: KB.ROVS.slice(), kb: Object.assign({}, KB.KNOWLEDGE) }, load(LS_SETTINGS, {}));
+// New starter master list: replace any section still exactly at the old default; keep Mike's edits.
+if ((settings.seed || 1) < KB.SEED_VERSION){
+  for (const k of Object.keys(KB.LEGACY_KNOWLEDGE))
+    if (settings.kb[k] === KB.LEGACY_KNOWLEDGE[k]) settings.kb[k] = KB.KNOWLEDGE[k];
+  settings.seed = KB.SEED_VERSION;
+  save(LS_SETTINGS, settings);
+}
 const view = Object.assign({ day: todayIso(), rov: settings.rovs[0] || '' }, load(LS_VIEW, {}));
 
 // each entry: { id, rov, day, time, raw, text, unclear, note, unknown[] }
