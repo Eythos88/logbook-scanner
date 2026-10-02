@@ -1,9 +1,10 @@
 /* Minimal service worker: cache the app shell so it installs and opens offline.
    API calls to api.anthropic.com are never cached — always go to the network. */
-const CACHE = 'logbook-v6';
+const VERSION = '7';                      // keep in step with ?v= in index.html
+const CACHE = 'logbook-v' + VERSION;
 const SHELL = [
-  '.', 'index.html', 'app.js', 'dpr.js', 'knowledge.js', 'prompt.js', 'manifest.webmanifest',
-  'vendor/xlsx.bundle.js',
+  '.', 'index.html', 'manifest.webmanifest',
+  ...['vendor/xlsx.bundle.js', 'dpr.js', 'knowledge.js', 'prompt.js', 'app.js'].map(f => f + '?v=' + VERSION),
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
 ];
 
@@ -25,7 +26,7 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== self.location.origin) return;           // don't touch the api.anthropic.com call
   // Network-first: online users always get the latest app; offline falls back to cache.
   e.respondWith(
-    fetch(req).then((res) => {
+    fetch(req, { cache: 'no-cache' }).then((res) => {   // revalidate: never trust a stale HTTP-cached copy
       const copy = res.clone();
       caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
       return res;

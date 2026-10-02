@@ -185,10 +185,21 @@
   </div>
 </div>
 
-<script src="vendor/xlsx.bundle.js"></script>
-<script src="dpr.js"></script>
-<script src="knowledge.js"></script>
-<script src="prompt.js"></script>
-<script src="app.js"></script>
+<!-- ?v= must match VERSION in sw.js: a new page always loads its own scripts, never a cached older set -->
+<script src="vendor/xlsx.bundle.js?v=7"></script>
+<script src="dpr.js?v=7"></script>
+<script src="knowledge.js?v=7"></script>
+<script src="prompt.js?v=7"></script>
+<script src="app.js?v=7"></script>
+<script>
+  // Self-heal: if the app didn't start (e.g. a half-updated cache), wipe caches and reload once.
+  if (!window.__appBooted && !sessionStorage.getItem('lb_healed')) {
+    sessionStorage.setItem('lb_healed', '1');
+    Promise.all([
+      'caches' in window ? caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))) : null,
+      navigator.serviceWorker ? navigator.serviceWorker.getRegistrations().then(rs => Promise.all(rs.map(r => r.unregister()))) : null,
+    ]).finally(() => location.reload());
+  }
+</script>
 </body>
 </html>

@@ -391,4 +391,6 @@ els.kbReset.addEventListener('click', () => {
 /* ---------- boot ---------- */
 renderSettings();
 if (getKey()){ showApp(); processQueue(); } else showSetup(false);
+window.__appBooted = true;   // checked by the self-heal script in index.html
+sessionStorage.removeItem('lb_healed');
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
