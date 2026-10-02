@@ -30,11 +30,12 @@ becomes a spreadsheet with `Date | Time | Description` columns. Pages accumulate
 
 ## Files
 `index.html` · `app.js` (UI, queue, export) · `dpr.js` (DPR format rules) · `prompt.js` (Claude request) ·
-`knowledge.js` (starter master list + house-style examples) · `sw.js` · `manifest.webmanifest` · `icons/` · `vendor/`
+`knowledge.js` (starter master list + house-style examples) · `kbmerge.js` (merge a shared master list into yours) · `sw.js` · `manifest.webmanifest` · `icons/` · `vendor/`
 
 ## Tests
 - `node test/export.test.js` — format rules + writes `test/out.xlsx`
 - `python test/compare_master.py "<path to master .xlsm>"` — checks `out.xlsx` formatting cell-by-cell against the master
+- `node test/merge.test.js` — master-list merge rules (add missing, fill "?", never overwrite)
 - `node test/live.test.js <keyfile>` — one real Claude call on `test/fixtures/page1.jpg` (synthetic page; ~6¢)
 
 ## Hosting

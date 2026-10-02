@@ -1,10 +1,10 @@
 /* Minimal service worker: cache the app shell so it installs and opens offline.
    API calls to api.anthropic.com are never cached — always go to the network. */
-const VERSION = '9';                      // keep in step with ?v= in index.html
+const VERSION = '10';                      // keep in step with ?v= in index.html
 const CACHE = 'logbook-v' + VERSION;
 const SHELL = [
   '.', 'index.html', 'manifest.webmanifest',
-  ...['vendor/xlsx.bundle.js', 'dpr.js', 'knowledge.js', 'prompt.js', 'app.js'].map(f => f + '?v=' + VERSION),
+  ...['vendor/xlsx.bundle.js', 'dpr.js', 'knowledge.js', 'prompt.js', 'kbmerge.js', 'app.js'].map(f => f + '?v=' + VERSION),
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
 ];
 

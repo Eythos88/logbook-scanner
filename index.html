@@ -166,8 +166,8 @@
     <div class="field"><label for="kbField">Field &amp; structure terms</label><textarea id="kbField" rows="6" spellcheck="false"></textarea></div>
     <div class="field"><label for="kbRov">General ROV knowledge</label><textarea id="kbRov" rows="6" spellcheck="false"></textarea></div>
     <div class="field"><label for="kbTooling">General ROV tooling</label><textarea id="kbTooling" rows="5" spellcheck="false"></textarea></div>
-    <p class="note">Share your list with another crew member: they tap <b>Import</b> and pick the file you sent.</p>
-    <div class="row"><button id="kbShare" class="btn-ghost grow">Share master list</button><button id="kbImport" class="btn-ghost grow">Import master list</button></div>
+    <p class="note">Share your list with another crew member: they tap <b>Add from shared list</b> and pick the file you sent. It only adds what they're missing — nothing they already have is changed.</p>
+    <div class="row"><button id="kbShare" class="btn-ghost grow">Share master list</button><button id="kbImport" class="btn-ghost grow">Add from shared list</button></div>
     <input id="kbFile" class="hidden" type="file" accept=".json,application/json,text/plain">
     <div class="row" style="margin-top:10px"><button id="kbReset" class="btn-ghost">Reset master list</button><button id="changeKey" class="btn-ghost">Change API key</button></div>
   </details>
@@ -189,11 +189,12 @@
 </div>
 
 <!-- ?v= must match VERSION in sw.js: a new page always loads its own scripts, never a cached older set -->
-<script src="vendor/xlsx.bundle.js?v=9"></script>
-<script src="dpr.js?v=9"></script>
-<script src="knowledge.js?v=9"></script>
-<script src="prompt.js?v=9"></script>
-<script src="app.js?v=9"></script>
+<script src="vendor/xlsx.bundle.js?v=10"></script>
+<script src="dpr.js?v=10"></script>
+<script src="knowledge.js?v=10"></script>
+<script src="prompt.js?v=10"></script>
+<script src="kbmerge.js?v=10"></script>
+<script src="app.js?v=10"></script>
 <script>
   // Self-heal: if the app didn't start (e.g. a half-updated cache), wipe caches and reload once.
   if (!window.__appBooted && !sessionStorage.getItem('lb_healed')) {

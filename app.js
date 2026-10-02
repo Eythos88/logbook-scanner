@@ -315,7 +315,6 @@ function bindKb(el, key){ el.addEventListener('input', () => { settings.kb[key] 
 const KB_FILE_TYPE = 'logbook-master-list';
 const KB_KEYS = ['abbrev', 'field', 'rov', 'tooling'];
 const KB_LABELS = { abbrev: 'Abbreviations', field: 'Field & structure terms', rov: 'General ROV knowledge', tooling: 'General ROV tooling' };
-const termCount = (t) => String(t || '').split('\n').filter(l => l.includes('=')).length;
 
 async function shareKb(){
   const data = { type: KB_FILE_TYPE, version: 1, exported: new Date().toISOString(), rovs: settings.rovs, kb: settings.kb };
@@ -340,15 +339,38 @@ async function importKb(file){
   if (!data || data.type !== KB_FILE_TYPE || !data.kb || !KB_KEYS.every(k => typeof data.kb[k] === 'string')){
     setStatus('That file is not a master list from this app.', 'err'); return;
   }
-  const summary = KB_KEYS.map(k => `${KB_LABELS[k]}: ${termCount(data.kb[k])} terms`).join('\n');
-  const when = data.exported ? ` (shared ${String(data.exported).slice(0, 10)})` : '';
-  if (!confirm(`Replace YOUR master list with this one${when}?\n\n${summary}\n\nYour current list will be overwritten.`)) return;
-  for (const k of KB_KEYS) settings.kb[k] = data.kb[k];
-  settings.seed = KB.SEED_VERSION;                       // imported list is never auto-replaced by a new starter list
-  const rovs = Array.isArray(data.rovs) ? data.rovs.map(r => String(r).trim().toUpperCase()).filter(Boolean) : [];
-  if (rovs.length && rovs.join(',') !== settings.rovs.join(',') && confirm(`Also use their ROV list: ${rovs.join(', ')}?`)) settings.rovs = rovs;
+  // merge theirs INTO mine: add what I'm missing, fill my "?" terms, never overwrite my meanings
+  const merged = {}, added = [], filled = [], conflicts = [];
+  for (const k of KB_KEYS){
+    const r = KBMERGE.mergeSection(settings.kb[k], data.kb[k]);
+    merged[k] = r.text;
+    r.added.forEach(l => added.push(l)); r.filled.forEach(l => filled.push(l));
+    r.conflicts.forEach(c => conflicts.push(c));
+  }
+  const rv = KBMERGE.mergeRovs(settings.rovs, Array.isArray(data.rovs) ? data.rovs : []);
+  if (!added.length && !filled.length && !rv.added.length){
+    setStatus(conflicts.length ? `Nothing new to add. ${conflicts.length === 1 ? '1 term differs' : conflicts.length + ' terms differ'} — yours kept.` : 'Nothing new — you already have everything in that list.', 'ok');
+    if (conflicts.length) alert(conflictText(conflicts));
+    return;
+  }
+  const list = (arr, max) => arr.slice(0, max).map(l => '  + ' + l).join('\n') + (arr.length > max ? `\n  …and ${arr.length - max} more` : '');
+  const parts = [];
+  if (added.length) parts.push(`Add ${added.length} new:\n${list(added, 8)}`);
+  if (filled.length) parts.push(`Fill in ${filled.length} you had as "?":\n${list(filled, 5)}`);
+  if (rv.added.length) parts.push(`Add ROV${rv.added.length === 1 ? '' : 's'}: ${rv.added.join(', ')}`);
+  if (conflicts.length) parts.push(`${conflicts.length === 1 ? '1 term differs' : conflicts.length + ' terms differ'} — yours will be kept (listed after).`);
+  if (!confirm(`Add from the shared list?\n\n${parts.join('\n\n')}\n\nNothing you already have is changed.`)) return;
+  for (const k of KB_KEYS) settings.kb[k] = merged[k];
+  settings.rovs = rv.rovs;
+  settings.seed = KB.SEED_VERSION;                       // a merged list is never auto-replaced by a new starter list
   saveSettings(); renderSettings(); renderAll();
-  setStatus('Master list imported.', 'ok');
+  setStatus(`Added ${added.length + filled.length} term${added.length + filled.length === 1 ? '' : 's'}` + (rv.added.length ? ` and ${rv.added.length} ROV${rv.added.length === 1 ? '' : 's'}.` : '.'), 'ok');
+  if (conflicts.length) alert(conflictText(conflicts));
+}
+function conflictText(conflicts){
+  return 'These terms mean something different on their list. Yours were kept — edit them in Settings if theirs is right:\n\n' +
+    conflicts.slice(0, 10).map(c => `${c.term}\n  yours:  ${c.mine}\n  theirs: ${c.theirs}`).join('\n\n') +
+    (conflicts.length > 10 ? `\n\n…and ${conflicts.length - 10} more` : '');
 }
 
 /* ---------- export: rows only, master format ---------- */
