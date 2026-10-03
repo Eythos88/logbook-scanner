@@ -1,6 +1,6 @@
 /* Minimal service worker: cache the app shell so it installs and opens offline.
    API calls to api.anthropic.com are never cached — always go to the network. */
-const VERSION = '17';                      // keep in step with ?v= in index.html
+const VERSION = '18';                      // keep in step with ?v= in index.html
 const CACHE = 'logbook-v' + VERSION;
 const SHELL = [
   '.', 'index.html', 'manifest.webmanifest',

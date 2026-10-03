@@ -5,26 +5,24 @@
   const MODEL = 'claude-opus-5-5';         // default: best accuracy on real handwriting
 
   /* Models each phone can choose in Settings. Costs and times measured 2026-10-02 on the synthetic
-     test pages (test/live.test.js page1 + page2); real pages with more lines will cost a little more. */
+     test pages (test/live.test.js page1 + page2); real pages with more lines will cost a little more.
+     Haiku 4.5 was tried and left out: it guessed unreadable words and times instead of flagging them. */
   const MODELS = [
-    { id: 'claude-opus-5-5', name: 'Opus 5.5', cost: '≈ 6–8¢ a page', effort: true, fallbacks: true,
+    { id: 'claude-opus-5-5', name: 'Opus 5.5', cost: '≈ 6–8¢ a page',
       pros: 'Best at messy or smudged handwriting; flags what it can’t read instead of guessing; follows the master list and milestone rules most closely.',
       cons: 'Most expensive; slowest (about 20–25 s a page).' },
-    { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', cost: '≈ 2–3¢ a page', effort: true, fallbacks: true,
+    { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', cost: '≈ 2–3¢ a page',
       pros: 'About a third of the cost of Opus and about three times faster (≈ 9 s a page); still flags what it can’t read.',
       cons: 'Writes long lines more often, so more Shorten taps; a little more likely to slip on hard pages.' },
-    { id: 'claude-haiku-4-5', name: 'Haiku 4.5', cost: '≈ 1¢ a page', effort: false, fallbacks: false,
-      pros: 'Cheapest; fine for neat, simple pages.',
-      cons: 'On a smudged test page it guessed unreadable words and times instead of flagging them. Check every line yourself.' },
   ];
   function modelInfo(id){ return MODELS.find(m => m.id === id) || MODELS[0]; }
-  /** model, refusal fallback and output_config for the chosen model (Haiku 4.5 takes no effort or fallbacks). */
+  /** model, refusal fallback and output_config for the chosen model. */
   function modelFields(id, effort, schema){
-    const m = modelInfo(id);
-    const out = { model: m.id, output_config: { format: { type: 'json_schema', schema } } };
-    if (m.effort) out.output_config.effort = effort;
-    if (m.fallbacks) out.fallbacks = 'default';     // server-side refusal fallback (beta header below)
-    return out;
+    return {
+      model: modelInfo(id).id,
+      fallbacks: 'default',                    // server-side refusal fallback (beta header below)
+      output_config: { effort, format: { type: 'json_schema', schema } },
+    };
   }
 
   const PAGE_SCHEMA = {
