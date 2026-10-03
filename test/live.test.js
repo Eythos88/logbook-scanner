@@ -1,4 +1,4 @@
-// node test/live.test.js <keyfile> [image]  — ONE real Claude call with the app's exact request.
+// node test/live.test.js <keyfile> [image] [model]  — ONE real Claude call with the app's exact request.
 // Costs a few cents. Prints the transcribed + cleaned rows and checks the hard rules.
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const DPR = require('../dpr.js');
@@ -10,11 +10,12 @@ const KB = ctx.KB;
 const key = fs.readFileSync(process.argv[2], 'utf8').trim();
 const img = process.argv[3] || path.join(__dirname, 'fixtures/page1.jpg');
 const base64 = fs.readFileSync(img).toString('base64');
+const model = process.argv[4] || PROMPT.MODEL;
 
 (async () => {
   // previous-day context for page3: mattress F21 went off deck before midnight
   const previousDay = /page3/.test(img) ? [{ time: '23:20', text: 'Crane off deck with mattress F21.' }, { time: '23:25', text: 'Visual inspection of mattress F21 complete; rigging inspection complete.' }] : [];
-  const body = PROMPT.buildRequest({ base64, rov: 'HD39', day: '2026-10-02', earlier: [], previousDay, kb: KB.KNOWLEDGE, styleExamples: KB.STYLE_EXAMPLES });
+  const body = PROMPT.buildRequest({ base64, rov: 'HD39', day: '2026-10-02', earlier: [], previousDay, kb: KB.KNOWLEDGE, styleExamples: KB.STYLE_EXAMPLES, model });
   const t0 = Date.now();
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST', headers: Object.assign({ 'x-api-key': key }, PROMPT.HEADERS), body: JSON.stringify(body),
@@ -37,7 +38,7 @@ const base64 = fs.readFileSync(img).toString('base64');
   // shorten the longest line with the app's exact shorten request
   const longest = rows.slice().sort((a, b) => b.clean.length - a.clean.length)[0];
   const sres = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: Object.assign({ 'x-api-key': key }, PROMPT.HEADERS),
-    body: JSON.stringify(PROMPT.buildShortenRequest({ line: longest.clean, kb: KB.KNOWLEDGE, styleExamples: KB.STYLE_EXAMPLES })) });
+    body: JSON.stringify(PROMPT.buildShortenRequest({ line: longest.clean, kb: KB.KNOWLEDGE, styleExamples: KB.STYLE_EXAMPLES, model })) });
   const sdata = await sres.json();
   if (!sres.ok) { console.log('SHORTEN HTTP', sres.status, JSON.stringify(sdata.error)); process.exit(1); }
   const short = JSON.parse(sdata.content.find(b => b.type === 'text').text).text;

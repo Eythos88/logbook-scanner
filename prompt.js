@@ -2,7 +2,30 @@
 (function (root) {
   'use strict';
   const DPR = root.DPR || (typeof require === 'function' ? require('./dpr.js') : null);
-  const MODEL = 'claude-opus-5-5';         // vision-capable; best accuracy on real handwriting
+  const MODEL = 'claude-opus-5-5';         // default: best accuracy on real handwriting
+
+  /* Models each phone can choose in Settings. Costs and times measured 2026-10-02 on the synthetic
+     test pages (test/live.test.js page1 + page2); real pages with more lines will cost a little more. */
+  const MODELS = [
+    { id: 'claude-opus-5-5', name: 'Opus 5.5', cost: '≈ 6–8¢ a page', effort: true, fallbacks: true,
+      pros: 'Best at messy or smudged handwriting; flags what it can’t read instead of guessing; follows the master list and milestone rules most closely.',
+      cons: 'Most expensive; slowest (about 20–25 s a page).' },
+    { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', cost: '≈ 2–3¢ a page', effort: true, fallbacks: true,
+      pros: 'About a third of the cost of Opus and about three times faster (≈ 9 s a page); still flags what it can’t read.',
+      cons: 'Writes long lines more often, so more Shorten taps; a little more likely to slip on hard pages.' },
+    { id: 'claude-haiku-4-5', name: 'Haiku 4.5', cost: '≈ 1¢ a page', effort: false, fallbacks: false,
+      pros: 'Cheapest; fine for neat, simple pages.',
+      cons: 'On a smudged test page it guessed unreadable words and times instead of flagging them. Check every line yourself.' },
+  ];
+  function modelInfo(id){ return MODELS.find(m => m.id === id) || MODELS[0]; }
+  /** model, refusal fallback and output_config for the chosen model (Haiku 4.5 takes no effort or fallbacks). */
+  function modelFields(id, effort, schema){
+    const m = modelInfo(id);
+    const out = { model: m.id, output_config: { format: { type: 'json_schema', schema } } };
+    if (m.effort) out.output_config.effort = effort;
+    if (m.fallbacks) out.fallbacks = 'default';     // server-side refusal fallback (beta header below)
+    return out;
+  }
 
   const PAGE_SCHEMA = {
     type: 'object',
@@ -98,18 +121,16 @@
   }
 
   /** Request body for one page. earlier = [{time, text}] already logged for this ROV + day. */
-  function buildRequest({ base64, rov, day, earlier, previousDay, kb, styleExamples }){
+  function buildRequest({ base64, rov, day, earlier, previousDay, kb, styleExamples, model }){
     const ctx = (earlier || []).map(e => `${DPR.fmtTime(e.time)}  ${e.text}`).join('\n');
     const prev = (previousDay || []).map(e => `${DPR.fmtTime(e.time)}  ${e.text}`).join('\n');
     const intro = `ROV for this page: ${rov}\nDPR day: ${day}\n\n` +
       (prev ? `Last entries of the previous day (context: an operation may carry over midnight):\n${prev}\n\n` : '') +
       (ctx ? `Entries already logged earlier this day (context only — do not repeat them):\n${ctx}\n\n` : '') +
       'Transcribe and clean every entry on this page.';
-    return {
-      model: MODEL,
+    return Object.assign(modelFields(model, 'high', PAGE_SCHEMA), {
       max_tokens: 16000,
       system: systemPrompt(kb, styleExamples),
-      fallbacks: 'default',                    // server-side refusal fallback (beta header below)
       messages: [{
         role: 'user',
         content: [
@@ -117,8 +138,7 @@
           { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
         ],
       }],
-      output_config: { effort: 'high', format: { type: 'json_schema', schema: PAGE_SCHEMA } },
-    };
+    });
   }
   const SHORTEN_SCHEMA = {
     type: 'object',
@@ -127,12 +147,10 @@
     additionalProperties: false,
   };
   /** Request to shorten one DPR line to fit, keeping every fact. Text only (no image). */
-  function buildShortenRequest({ line, before, after, kb, styleExamples }){
-    return {
-      model: MODEL,
+  function buildShortenRequest({ line, before, after, kb, styleExamples, model }){
+    return Object.assign(modelFields(model, 'medium', SHORTEN_SCHEMA), {
       max_tokens: 4000,
       system: systemPrompt(kb, styleExamples),
-      fallbacks: 'default',
       messages: [{
         role: 'user',
         content: `Shorten this DPR line to at most ${DPR.LINE_MAX} characters, in the same formal style. ` +
@@ -142,8 +160,7 @@
           `LINE: ${line}\n` +
           (after ? `Line after (context): ${after}\n` : ''),
       }],
-      output_config: { effort: 'medium', format: { type: 'json_schema', schema: SHORTEN_SCHEMA } },
-    };
+    });
   }
 
   const HEADERS = {
@@ -152,7 +169,7 @@
     'anthropic-beta': 'server-side-fallback-2026-07-01',
   };
 
-  const api = { MODEL, PAGE_SCHEMA, systemPrompt, buildRequest, buildShortenRequest, HEADERS };
+  const api = { MODEL, MODELS, modelInfo, PAGE_SCHEMA, systemPrompt, buildRequest, buildShortenRequest, HEADERS };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.PROMPT = api;
 })(typeof self !== 'undefined' ? self : this);

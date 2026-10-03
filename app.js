@@ -30,6 +30,7 @@ if ((settings.seed || 1) < KB.SEED_VERSION){
   settings.seed = KB.SEED_VERSION;
   save(LS_SETTINGS, settings);
 }
+if (!PROMPT.MODELS.some(m => m.id === settings.model)) settings.model = PROMPT.MODEL;   // per-phone model choice
 const view = Object.assign({ day: todayIso(), rov: settings.rovs[0] || '' }, load(LS_VIEW, {}));
 
 // each entry: { id, rov, day, time, raw, text, unclear, note, unknown[] }
@@ -45,7 +46,7 @@ const $ = (id) => document.getElementById(id);
 const els = {};
 ['setup','app','keyInput','keySave','scanBtn','pickBtn','fileCam','filePick','status','entries','count',
  'addRow','clearDay','exportBtn','changeKey','dayInput','rovSelect','rovSheet','rovChoices','rovCancel',
- 'queueBar','queueText','retryBtn','rovList','kbAbbrev','kbField','kbRov','kbTooling','kbOps','kbReset','kbShare','kbImport','kbFile','flagBox','flagTitle','flagList','fixAll','undoFix']
+ 'queueBar','queueText','retryBtn','rovList','kbAbbrev','kbField','kbRov','kbTooling','kbOps','kbReset','kbShare','kbImport','kbFile','flagBox','flagTitle','flagList','fixAll','undoFix','modelChoices']
   .forEach(id => els[id] = $(id));
 
 /* ---------- status ---------- */
@@ -148,7 +149,7 @@ async function callClaude(body, emptyMsg){
 async function readPage(base64, rov, day){
   const out = await callClaude(PROMPT.buildRequest({
     base64, rov, day, earlier: dayEntries(day, rov), previousDay: dayEntries(shiftDay(day, -1), rov).slice(-12),
-    kb: settings.kb, styleExamples: KB.STYLE_EXAMPLES,
+    kb: settings.kb, styleExamples: KB.STYLE_EXAMPLES, model: settings.model,
   }), 'Could not read the transcription — try a clearer, straighter photo.');
   return out.rows || [];
 }
@@ -156,7 +157,7 @@ async function readPage(base64, rov, day){
 async function shortenLine(e){
   const list = dayEntries(e.day, e.rov), i = list.indexOf(e);
   const out = await callClaude(PROMPT.buildShortenRequest({
-    line: e.text, before: list[i - 1]?.text, after: list[i + 1]?.text, kb: settings.kb, styleExamples: KB.STYLE_EXAMPLES,
+    line: e.text, before: list[i - 1]?.text, after: list[i + 1]?.text, kb: settings.kb, styleExamples: KB.STYLE_EXAMPLES, model: settings.model,
   }), 'No shorter version came back — try again.');
   return String(out.text || '').trim();
 }
@@ -594,6 +595,16 @@ function renderSettings(){
   els.kbRov.value = settings.kb.rov;
   els.kbTooling.value = settings.kb.tooling;
   els.kbOps.value = settings.kb.ops;
+  renderModels();
+}
+function renderModels(){
+  els.modelChoices.innerHTML = PROMPT.MODELS.map(m => `
+    <label class="model-choice">
+      <input type="radio" name="model" value="${esc(m.id)}"${m.id === settings.model ? ' checked' : ''}>
+      <span><b>${esc(m.name)}</b> <span class="model-cost">${esc(m.cost)}</span>
+        <span class="model-pc"><span class="pro">+</span> ${esc(m.pros)}</span>
+        <span class="model-pc"><span class="con">−</span> ${esc(m.cons)}</span></span>
+    </label>`).join('');
 }
 function bindKb(el, key){
   el.addEventListener('input', () => { settings.kb[key] = el.value; saveSettings(); });
@@ -736,6 +747,11 @@ els.clearDay.addEventListener('click', () => {
 els.exportBtn.addEventListener('click', exportXlsx);
 els.fixAll.addEventListener('click', applyAll);
 els.undoFix.addEventListener('click', undoFix);
+els.modelChoices.addEventListener('change', e => {
+  if (e.target.name !== 'model') return;
+  settings.model = e.target.value; saveSettings();
+  setStatus(`Pages will now be read with ${PROMPT.modelInfo(settings.model).name}.`, 'ok');
+});
 els.rovList.addEventListener('change', () => {
   settings.rovs = els.rovList.value.split(/[,\n]/).map(s => s.trim().toUpperCase()).filter(Boolean);
   saveSettings(); renderSettings(); renderAll();

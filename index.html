@@ -112,6 +112,16 @@
   .settings{margin-top:22px;border-top:1px solid var(--line);padding-top:12px}
   .settings summary{cursor:pointer;font-weight:600;font-size:15px;padding:6px 0}
   .settings textarea{font-family:var(--mono);font-size:13px}
+  .models{border:0;padding:0;margin:0 0 12px}
+  .models legend{font-size:13px;color:var(--ink2);margin-bottom:6px;padding:0}
+  .model-choice{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 8px;cursor:pointer;
+    font-size:14px;color:var(--ink);text-transform:none;letter-spacing:normal;font-weight:400}
+  .model-choice:has(input:checked){border-color:var(--accent)}
+  .model-choice input{flex:none;width:18px;height:18px;margin:2px 0 0;padding:0;accent-color:var(--accent)}
+  .model-cost{font-family:var(--mono);font-size:12px;color:var(--ink2);margin-left:6px}
+  .model-pc{display:block;font-size:13px;color:var(--ink2);margin-top:4px}
+  .model-pc .pro{color:var(--green);font-weight:700}
+  .model-pc .con{color:var(--amber);font-weight:700}
   code{font-family:var(--mono);font-size:12px}
   .flagbox{margin:12px 0 4px;border:1px solid var(--amber);border-radius:12px;background:rgba(214,155,74,.06);padding:11px 12px}
   .flagbox.clear{border-color:var(--green);background:rgba(59,166,118,.07)}
@@ -198,6 +208,8 @@
   <details class="settings">
     <summary>Settings &amp; master list</summary>
     <div class="field"><label for="rovList">ROVs (comma separated)</label><input id="rovList" type="text" autocapitalize="characters"></div>
+    <fieldset class="models"><legend>AI model (this phone only)</legend><div id="modelChoices"></div>
+      <p class="note">Costs are rough estimates, charged to this phone's API key. The same model is used for reading pages and for Shorten.</p></fieldset>
     <p class="note">The master list is what the cleanup uses to get your terms right. One term per line, <code>TERM = meaning</code>. Use <code>?</code> where the meaning isn't known yet; the app will leave that term as written.</p>
     <div class="field"><label for="kbAbbrev">Abbreviations</label><textarea id="kbAbbrev" rows="8" spellcheck="false"></textarea></div>
     <div class="field"><label for="kbField">Field &amp; structure terms</label><textarea id="kbField" rows="6" spellcheck="false"></textarea></div>
@@ -227,12 +239,12 @@
 </div>
 
 <!-- ?v= must match VERSION in sw.js: a new page always loads its own scripts, never a cached older set -->
-<script src="vendor/xlsx.bundle.js?v=16"></script>
-<script src="dpr.js?v=16"></script>
-<script src="knowledge.js?v=16"></script>
-<script src="prompt.js?v=16"></script>
-<script src="kbmerge.js?v=16"></script>
-<script src="app.js?v=16"></script>
+<script src="vendor/xlsx.bundle.js?v=17"></script>
+<script src="dpr.js?v=17"></script>
+<script src="knowledge.js?v=17"></script>
+<script src="prompt.js?v=17"></script>
+<script src="kbmerge.js?v=17"></script>
+<script src="app.js?v=17"></script>
 <script>
   // Self-heal: if the app didn't start (e.g. a half-updated cache), wipe caches and reload once.
   if (!window.__appBooted && !sessionStorage.getItem('lb_healed')) {
