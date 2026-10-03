@@ -18,10 +18,12 @@ function save(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {
 function getKey(){ return localStorage.getItem(LS_KEY) || ''; }
 function uid(){ return (self.crypto && crypto.randomUUID) ? crypto.randomUUID()
   : 'id-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); }
+function shiftDay(iso, n){ const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 function todayIso(){ const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); }
 
 const settings = Object.assign({ rovs: KB.ROVS.slice(), kb: Object.assign({}, KB.KNOWLEDGE) }, load(LS_SETTINGS, {}));
 // New starter master list: replace any section still exactly at the old default; keep Mike's edits.
+if (typeof settings.kb.ops !== 'string') settings.kb.ops = KB.KNOWLEDGE.ops;   // section added in seed v3
 if ((settings.seed || 1) < KB.SEED_VERSION){
   for (const k of Object.keys(KB.LEGACY_KNOWLEDGE))
     if (settings.kb[k] === KB.LEGACY_KNOWLEDGE[k]) settings.kb[k] = KB.KNOWLEDGE[k];
@@ -43,7 +45,7 @@ const $ = (id) => document.getElementById(id);
 const els = {};
 ['setup','app','keyInput','keySave','scanBtn','pickBtn','fileCam','filePick','status','entries','count',
  'addRow','clearDay','exportBtn','changeKey','dayInput','rovSelect','rovSheet','rovChoices','rovCancel',
- 'queueBar','queueText','retryBtn','rovList','kbAbbrev','kbField','kbRov','kbTooling','kbReset','kbShare','kbImport','kbFile','flagBox','flagTitle','flagList','fixAll','undoFix']
+ 'queueBar','queueText','retryBtn','rovList','kbAbbrev','kbField','kbRov','kbTooling','kbOps','kbReset','kbShare','kbImport','kbFile','flagBox','flagTitle','flagList','fixAll','undoFix']
   .forEach(id => els[id] = $(id));
 
 /* ---------- status ---------- */
@@ -145,7 +147,8 @@ async function callClaude(body, emptyMsg){
 
 async function readPage(base64, rov, day){
   const out = await callClaude(PROMPT.buildRequest({
-    base64, rov, day, earlier: dayEntries(day, rov), kb: settings.kb, styleExamples: KB.STYLE_EXAMPLES,
+    base64, rov, day, earlier: dayEntries(day, rov), previousDay: dayEntries(shiftDay(day, -1), rov).slice(-12),
+    kb: settings.kb, styleExamples: KB.STYLE_EXAMPLES,
   }), 'Could not read the transcription — try a clearer, straighter photo.');
   return out.rows || [];
 }
@@ -220,6 +223,7 @@ async function processQueue(){
         unknown: (r.unknown_terms || []).filter(Boolean),
         fixText: (r.fix_text || '').trim(), fixTime: DPR.parseTime(r.fix_time) == null ? '' : DPR.fmtTime(r.fix_time),
         termSugg: (r.term_suggestions || []).filter(s => s && s.term),
+        op: (r.operation || '').trim(), step: Number(r.step) || 0, asset: (r.asset || '').trim(),
       }));
       entries.push(...added); saveEntries();
       await qDel(p.id);
@@ -263,6 +267,11 @@ function stillUnknown(e){
 /** Every flag on a line → [{ text, kind, soft }]. kind 'unclear' / 'unknown' can be dismissed. */
 function flagsFor(e, outOfOrder){
   const f = [];
+  const g = gaps.get(e.id);
+  if (g && !(e.dismissed || []).includes('gap')){
+    const names = g.gap.map(x => `step ${x.step} — “${fillStep(x.text, g.asset, g.rov)}”`).join(', ');
+    f.push({ kind: 'gap', text: `${g.asset}: missing ${names}` });
+  }
   const unk = stillUnknown(e);
   if (e.unclear) f.push({ kind: 'unclear', text: `Check: ${e.note || 'part of this was hard to read'}` });
   if (unk.length) f.push({ kind: 'unknown', text: `Not in master list: ${unk.join(', ')}` });
@@ -272,12 +281,50 @@ function flagsFor(e, outOfOrder){
   return f;
 }
 
+/* ---------- operation playbooks: missing critical points ---------- */
+/** "## Mattress installation — asset: …" + "1. …" lines → Map(name → [step text, …]) */
+function parsePlaybooks(text){
+  const books = new Map(); let cur = null;
+  for (const line of String(text || '').split('\n')){
+    const h = line.match(/^\s*##\s*([^—\-]+?)\s*(?:[—\-].*)?$/);
+    if (h){ cur = []; books.set(h[1].trim().toLowerCase(), cur); continue; }
+    const st = line.match(/^\s*(\d+)[.)]\s*(.+)$/);
+    if (cur && st) cur[+st[1] - 1] = st[2].trim();
+  }
+  return books;
+}
+/** For the day's lines: entry id → [{ step, text }] of playbook steps missing just before that line. */
+function missingSteps(list){
+  const books = parsePlaybooks(settings.kb.ops);
+  const out = new Map();
+  const cycles = new Map();                       // "op|asset" → [entries in order]
+  for (const e of list){
+    if (!e.op || !e.asset || !e.step) continue;
+    const k = e.op.toLowerCase() + '|' + e.asset.toUpperCase();
+    if (!cycles.has(k)) cycles.set(k, []);
+    cycles.get(k).push(e);
+  }
+  for (const [k, es] of cycles){
+    const steps = books.get(k.split('|')[0]); if (!steps) continue;
+    const seen = new Set(es.map(e => e.step));
+    for (let i = 1; i < es.length; i++){
+      const gap = [];
+      for (let s = es[i - 1].step + 1; s < es[i].step; s++) if (!seen.has(s) && steps[s - 1]) gap.push({ step: s, text: steps[s - 1] });
+      if (gap.length) out.set(es[i].id, { gap, asset: es[i].asset, rov: es[i].rov, after: es[i - 1] });
+    }
+  }
+  return out;
+}
+const fillStep = (t, asset, rov) => t.replace(/\{ID\}/g, asset).replace(/\{ROV\}/g, rov);
+
 let cardState = new Map();   // entry id → { e, card, outOfOrder, paint }
+let gaps = new Map();        // entry id → missing playbook steps just before it
 
 function renderEntries(){
   const list = dayEntries(view.day, view.rov);
   els.count.textContent = `${list.length} line${list.length === 1 ? '' : 's'}`;
   cardState = new Map();
+  gaps = missingSteps(list);
   if (list.length === 0){
     els.entries.innerHTML = '<div class="empty">No lines for this ROV and day yet. Tap Scan a page.</div>';
     renderFlagSummary();
@@ -359,6 +406,18 @@ function fixFor(e, f){
           settings.kb.abbrev = r.text;
         }
         saveSettings(); renderSettings();
+      } };
+  }
+  if (f.kind === 'gap'){
+    const g = gaps.get(e.id);
+    const lines = g.gap.map(x => fillStep(x.text, g.asset, g.rov));
+    return { rec: `Insert ${lines.length === 1 ? 'the missing line' : lines.length + ' missing lines'} between ${g.after.time || '?'} and ${e.time || '?'}: ` +
+      lines.map(l => `“${l}”`).join(' ') + ' — then type the time from your log. Or tap OK if it really wasn’t done.',
+      btn: 'Insert', apply(){
+        const at = entries.indexOf(e);
+        const add = g.gap.map(x => ({ id: uid(), rov: e.rov, day: e.day, time: '', raw: '', text: fillStep(x.text, g.asset, g.rov),
+          unclear: false, note: '', unknown: [], op: e.op, step: x.step, asset: g.asset }));
+        entries.splice(at, 0, ...add);
       } };
   }
   if (f.kind === 'order'){
@@ -455,7 +514,7 @@ function renderFlagSummary(){
       `<span class="flag-why">${esc(f.text)}</span><span class="flag-line">${esc(e.text.slice(0, 60))}${e.text.length > 60 ? '…' : ''}</span></button>` +
       '<div class="flag-acts">' +
         (fx && fx.btn ? `<button class="flag-fix">${esc(fx.btn)}</button>` : '') +
-        (f.kind === 'unclear' || f.kind === 'unknown' ? '<button class="flag-ok" aria-label="Mark as checked">OK</button>' : '') +
+        (f.kind === 'unclear' || f.kind === 'unknown' || f.kind === 'gap' ? '<button class="flag-ok" aria-label="Mark as checked">OK</button>' : '') +
       '</div>' +
       (fx ? `<p class="flag-rec">${esc(fx.rec)}</p>` : '');
     li.querySelector('.flag-go').addEventListener('click', () => {
@@ -471,7 +530,9 @@ function renderFlagSummary(){
     });
     const ok = li.querySelector('.flag-ok');
     if (ok) ok.addEventListener('click', () => {
-      if (f.kind === 'unclear') e.unclear = false; else e.unknown = [];
+      if (f.kind === 'unclear') e.unclear = false;
+      else if (f.kind === 'gap') e.dismissed = (e.dismissed || []).concat('gap');
+      else e.unknown = [];
       saveEntries(); cardState.get(e.id)?.paint(); renderFlagSummary();
     });
     els.flagList.appendChild(li);
@@ -491,6 +552,7 @@ function renderSettings(){
   els.kbField.value = settings.kb.field;
   els.kbRov.value = settings.kb.rov;
   els.kbTooling.value = settings.kb.tooling;
+  els.kbOps.value = settings.kb.ops;
 }
 function bindKb(el, key){
   el.addEventListener('input', () => { settings.kb[key] = el.value; saveSettings(); });
@@ -499,8 +561,7 @@ function bindKb(el, key){
 
 /* ---------- share / import the master list (file passed phone to phone — never online) ---------- */
 const KB_FILE_TYPE = 'logbook-master-list';
-const KB_KEYS = ['abbrev', 'field', 'rov', 'tooling'];
-const KB_LABELS = { abbrev: 'Abbreviations', field: 'Field & structure terms', rov: 'General ROV knowledge', tooling: 'General ROV tooling' };
+const KB_KEYS = ['abbrev', 'field', 'rov', 'tooling', 'ops'];
 
 async function shareKb(){
   const data = { type: KB_FILE_TYPE, version: 1, exported: new Date().toISOString(), rovs: settings.rovs, kb: settings.kb };
@@ -522,13 +583,13 @@ async function importKb(file){
   if (!file) return;
   let data;
   try { data = JSON.parse(await file.text()); } catch { data = null; }
-  if (!data || data.type !== KB_FILE_TYPE || !data.kb || !KB_KEYS.every(k => typeof data.kb[k] === 'string')){
+  if (!data || data.type !== KB_FILE_TYPE || !data.kb || !KB_KEYS.filter(k => k !== 'ops').every(k => typeof data.kb[k] === 'string')){   // lists shared before playbooks have no ops
     setStatus('That file is not a master list from this app.', 'err'); return;
   }
   // merge theirs INTO mine: add what I'm missing, fill my "?" terms, never overwrite my meanings
   const merged = {}, added = [], filled = [], conflicts = [];
   for (const k of KB_KEYS){
-    const r = KBMERGE.mergeSection(settings.kb[k], data.kb[k]);
+    const r = KBMERGE.mergeSection(settings.kb[k], data.kb[k] || '');
     merged[k] = r.text;
     r.added.forEach(l => added.push(l)); r.filled.forEach(l => filled.push(l));
     r.conflicts.forEach(c => conflicts.push(c));
@@ -638,7 +699,7 @@ els.rovList.addEventListener('change', () => {
   settings.rovs = els.rovList.value.split(/[,\n]/).map(s => s.trim().toUpperCase()).filter(Boolean);
   saveSettings(); renderSettings(); renderAll();
 });
-bindKb(els.kbAbbrev, 'abbrev'); bindKb(els.kbField, 'field'); bindKb(els.kbRov, 'rov'); bindKb(els.kbTooling, 'tooling');
+bindKb(els.kbAbbrev, 'abbrev'); bindKb(els.kbField, 'field'); bindKb(els.kbRov, 'rov'); bindKb(els.kbTooling, 'tooling'); bindKb(els.kbOps, 'ops');
 els.kbShare.addEventListener('click', shareKb);
 els.kbImport.addEventListener('click', () => els.kbFile.click());
 els.kbFile.addEventListener('change', e => { importKb(e.target.files[0]); e.target.value = ''; });

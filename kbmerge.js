@@ -42,6 +42,9 @@
       }
       let j = mine.length;
       while (j > 0 && !mine[j - 1].trim()) j--;
+      if (h != null) {                       // their group is new to me: bring its header along
+        mine.splice(j, 0, '', h.trim()); return j + 2;
+      }
       return j;
     };
 

@@ -42,4 +42,12 @@ const again = mergeSection(r.text, theirs);
 assert.deepStrictEqual([again.added.length, again.filled.length], [0, 0]);
 
 assert.deepStrictEqual(mergeRovs(['HD39', 'HD55'], ['hd55', 'HD38']), { rovs: ['HD39', 'HD55', 'HD38'], added: ['HD38'] });
+// a whole new playbook from a crew-mate arrives with its own header
+const ops = mergeSection(
+  ['## Mattress installation — asset: mattress ID', '1. Crane off deck with mattress {ID}.'].join('\n'),
+  ['## Mattress installation — asset: mattress ID', '1. Crane off deck with mattress {ID}.', '',
+   '## Grout bag fill — asset: grout bag ID', '1. Grout hose connected to {ID}.', '2. Grout pumping started on {ID}.'].join('\n'));
+const ol = ops.text.split('\n');
+assert.deepStrictEqual(ol.slice(-3), ['## Grout bag fill — asset: grout bag ID', '1. Grout hose connected to {ID}.', '2. Grout pumping started on {ID}.']);
+assert.strictEqual(ol.filter(l => l.startsWith('## Grout')).length, 1, 'header added once');
 console.log('merge rules OK');

@@ -34,6 +34,7 @@ RTS = return to surface
 WOW = waiting on weather
 SOZ = safe operating zone
 TDP = touchdown point
+GL = green light (to release)
 HDG = heading
 STBD = starboard
 FWD = forward
@@ -60,6 +61,20 @@ Dive sequence: pre-dive checks → "Dive" (launch) → TMS all-stop at depth →
 Vessel moves are logged as a vessel move commencing, then "Vessel move complete."
 Shift change happens at 11:45 / 23:45 after a pre-shift meeting at 11:30 / 23:30.
 The day opens "Begin this day …" at 00:00 and closes "End this day …" at 24:00.`,
+
+    ops:
+`# Operation playbooks — the critical points of each operation, in order.
+# Write each step's line in this wording. {ID} = the asset's ID, {ROV} = the ROV for the page.
+# Add a playbook for any operation you run: a "## name — asset: …" line, then numbered steps.
+
+## Mattress installation — asset: mattress ID (e.g. F21, B4)
+1. Crane off deck with mattress {ID}.
+2. Visual inspection of mattress {ID} and rigging check complete.
+3. Vessel in position; begin installation of mattress {ID}.
+4. Mattress {ID} landed; green light given to release.
+5. Mattress {ID} released.
+6. {ROV} in the safe operating zone for crane recovery.
+7. Crane on deck.`,
 
     tooling:
 `# General ROV tooling
@@ -137,7 +152,7 @@ Shift change happens at 11:45 / 23:45 after a pre-shift meeting at 11:30 / 23:30
 The day opens "Begin this day, …" at 00:00 and closes "End this day, …" at 24:00.`,
 
   };
-  const SEED_VERSION = 2;
+  const SEED_VERSION = 3;   // v3 added the operation playbooks section
 
   root.KB = { ROVS, KNOWLEDGE, STYLE_EXAMPLES, LEGACY_KNOWLEDGE, SEED_VERSION };
 })(typeof self !== 'undefined' ? self : this);

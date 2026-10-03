@@ -12,7 +12,9 @@ const img = process.argv[3] || path.join(__dirname, 'fixtures/page1.jpg');
 const base64 = fs.readFileSync(img).toString('base64');
 
 (async () => {
-  const body = PROMPT.buildRequest({ base64, rov: 'HD39', day: '2026-09-16', earlier: [], kb: KB.KNOWLEDGE, styleExamples: KB.STYLE_EXAMPLES });
+  // previous-day context for page3: mattress F21 went off deck before midnight
+  const previousDay = /page3/.test(img) ? [{ time: '23:20', text: 'Crane off deck with mattress F21.' }, { time: '23:25', text: 'Visual inspection of mattress F21 and rigging check complete.' }] : [];
+  const body = PROMPT.buildRequest({ base64, rov: 'HD39', day: '2026-10-02', earlier: [], previousDay, kb: KB.KNOWLEDGE, styleExamples: KB.STYLE_EXAMPLES });
   const t0 = Date.now();
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST', headers: Object.assign({ 'x-api-key': key }, PROMPT.HEADERS), body: JSON.stringify(body),
@@ -25,7 +27,7 @@ const base64 = fs.readFileSync(img).toString('base64');
   for (const r of rows) {
     const over = r.clean.length > DPR.LINE_MAX;
     if (over) bad++;
-    console.log(`${DPR.fmtTime(r.time).padEnd(6)} RAW  ${r.raw}\n       DPR  ${r.clean}${over ? '   <-- OVER ' + DPR.LINE_MAX : ''}${r.unclear ? '   [unclear: ' + r.note + ']' : ''}${r.unknown_terms.length ? '   [unknown: ' + r.unknown_terms.join(', ') + ']' : ''}`);
+    console.log(`${DPR.fmtTime(r.time).padEnd(6)} [${r.operation ? r.operation + ' #' + r.step : '-'} ${r.asset || ''}] RAW  ${r.raw}\n       DPR  ${r.clean}${over ? '   <-- OVER ' + DPR.LINE_MAX : ''}${r.unclear ? '   [unclear: ' + r.note + ']' : ''}${r.unknown_terms.length ? '   [unknown: ' + r.unknown_terms.join(', ') + ']' : ''}`);
   }
   for (const r of rows) {
     if (r.fix_text || r.fix_time || r.term_suggestions.length)

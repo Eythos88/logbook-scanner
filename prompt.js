@@ -18,6 +18,9 @@
             unclear: { type: 'boolean', description: 'true if any word, number, ID or time could not be read with confidence' },
             note: { type: 'string', description: 'short reason for the reviewer when unclear, else empty' },
             unknown_terms: { type: 'array', items: { type: 'string' }, description: 'abbreviations not in the master list and not obvious' },
+            operation: { type: 'string', description: 'name of the matching operation playbook (text after "## " up to " —"), else empty' },
+            step: { type: 'integer', description: 'playbook step number this entry is, else 0' },
+            asset: { type: 'string', description: 'ID of the asset this entry is about (e.g. F21), carried from earlier lines when not written; else empty' },
             fix_text: { type: 'string', description: 'when unclear: your best context-based reading of the whole line, for the reviewer to accept or reject; else empty' },
             fix_time: { type: 'string', description: 'when the time is unreadable or out of sequence: your best HH:MM from the handwriting and neighbouring times; else empty' },
             term_suggestions: {
@@ -35,7 +38,7 @@
               },
             },
           },
-          required: ['time', 'raw', 'clean', 'unclear', 'note', 'unknown_terms', 'fix_text', 'fix_time', 'term_suggestions'],
+          required: ['time', 'raw', 'clean', 'unclear', 'note', 'unknown_terms', 'operation', 'step', 'asset', 'fix_text', 'fix_time', 'term_suggestions'],
           additionalProperties: false,
         },
       },
@@ -65,6 +68,12 @@
       '- In the master list, "?" means the meaning is unknown: keep that term as written, do not guess its meaning.',
       '- A legible term that is simply not in the master list goes in unknown_terms only. Do not also set unclear=true for it — unclear is for handwriting you could not read.',
       '',
+      'Operations and assets (see <operation_playbooks>):',
+      '- Work out which operation is underway and which asset (mattress, bag, structure…) each entry is about. Shift logs often leave the ID off later steps ("released", "in SOZ") — carry the asset from earlier lines of the same cycle, including the earlier entries supplied.',
+      '- When an entry is a step of a playbook, set operation, step and asset, and write "clean" in that step\'s wording with {ID} and {ROV} filled in. Add any extra detail that is written on the line (a reason, a depth, a problem) after the step wording.',
+      '- If you cannot tell which asset an entry is about, leave asset empty, set unclear=true and say so in the note. Never invent an asset ID.',
+      '- Entries that are not a playbook step: operation empty, step 0; asset still set if the line is about an asset.',
+      '',
       'Suggested fixes (the reviewer accepts or rejects these — they never go in "clean" on their own):',
       '- fix_text: only when unclear=true. Your most likely reading of the whole line in the same formal style, using the rest of the page to resolve the hard-to-read part. Still no invented facts. Empty when there is nothing better to offer.',
       '- fix_time: only when the time is unreadable, or plainly out of sequence with its neighbours (a likely misread digit). Your best HH:MM. Empty otherwise.',
@@ -77,14 +86,18 @@
       '## General ROV tooling', kb.tooling,
       '</master_list>',
       '',
+      '<operation_playbooks>', kb.ops || '(none)', '</operation_playbooks>',
+      '',
       '<house_style_examples>', styleExamples.join('\n'), '</house_style_examples>',
     ].join('\n');
   }
 
   /** Request body for one page. earlier = [{time, text}] already logged for this ROV + day. */
-  function buildRequest({ base64, rov, day, earlier, kb, styleExamples }){
+  function buildRequest({ base64, rov, day, earlier, previousDay, kb, styleExamples }){
     const ctx = (earlier || []).map(e => `${DPR.fmtTime(e.time)}  ${e.text}`).join('\n');
+    const prev = (previousDay || []).map(e => `${DPR.fmtTime(e.time)}  ${e.text}`).join('\n');
     const intro = `ROV for this page: ${rov}\nDPR day: ${day}\n\n` +
+      (prev ? `Last entries of the previous day (context: an operation may carry over midnight):\n${prev}\n\n` : '') +
       (ctx ? `Entries already logged earlier this day (context only — do not repeat them):\n${ctx}\n\n` : '') +
       'Transcribe and clean every entry on this page.';
     return {
