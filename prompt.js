@@ -2,26 +2,28 @@
 (function (root) {
   'use strict';
   const DPR = root.DPR || (typeof require === 'function' ? require('./dpr.js') : null);
-  const MODEL = 'claude-opus-5-5';         // default: best accuracy on real handwriting
+  const MODEL = 'claude-sonnet-5-5';       // default: cheapest setting that got every test line right
 
-  /* Models each phone can choose in Settings. Costs and times measured 2026-10-02 on the synthetic
-     test pages (test/live.test.js page1 + page2); real pages with more lines will cost a little more.
+  /* Models each phone can choose in Settings, each with the effort it reads pages at. Measured 2026-10-02
+     with test/sweep.js on the three synthetic pages: Sonnet 5.5 got every check right at every effort, so it
+     runs at low (cheapest, fastest); Opus 5.5 stays at high as the careful choice for hard handwriting.
      Haiku 4.5 was tried and left out: it guessed unreadable words and times instead of flagging them. */
   const MODELS = [
-    { id: 'claude-opus-5-5', name: 'Opus 5.5', cost: '≈ 6–8¢ a page',
-      pros: 'Best at messy or smudged handwriting; flags what it can’t read instead of guessing; follows the master list and milestone rules most closely.',
-      cons: 'Most expensive; slowest (about 20–25 s a page).' },
-    { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', cost: '≈ 2–3¢ a page',
-      pros: 'About a third of the cost of Opus and about three times faster (≈ 9 s a page); still flags what it can’t read.',
-      cons: 'Writes long lines more often, so more Shorten taps; a little more likely to slip on hard pages.' },
+    { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', effort: 'low', cost: '≈ 2.5–3.5¢ a page',
+      pros: 'Got every line right on our test pages, flagging what it couldn’t read; about 8–11 s a page.',
+      cons: 'Not yet tested on a real handwritten page. If it misreads hard handwriting, switch to Opus.' },
+    { id: 'claude-opus-5-5', name: 'Opus 5.5', effort: 'high', cost: '≈ 7–9¢ a page',
+      pros: 'The strongest reader for messy or smudged handwriting; the safe choice for hard pages.',
+      cons: 'About two to three times the cost of Sonnet, and slower (about 20–25 s a page).' },
   ];
-  function modelInfo(id){ return MODELS.find(m => m.id === id) || MODELS[0]; }
-  /** model, refusal fallback and output_config for the chosen model. */
+  function modelInfo(id){ return MODELS.find(m => m.id === id) || MODELS.find(m => m.id === MODEL); }
+  /** model, refusal fallback and output_config for the chosen model (effort: the model's own unless given). */
   function modelFields(id, effort, schema){
+    const m = modelInfo(id);
     return {
-      model: modelInfo(id).id,
+      model: m.id,
       fallbacks: 'default',                    // server-side refusal fallback (beta header below)
-      output_config: { effort, format: { type: 'json_schema', schema } },
+      output_config: { effort: effort || m.effort, format: { type: 'json_schema', schema } },
     };
   }
 
@@ -126,7 +128,7 @@
       (prev ? `Last entries of the previous day (context: an operation may carry over midnight):\n${prev}\n\n` : '') +
       (ctx ? `Entries already logged earlier this day (context only — do not repeat them):\n${ctx}\n\n` : '') +
       'Transcribe and clean every entry on this page.';
-    return Object.assign(modelFields(model, 'high', PAGE_SCHEMA), {
+    return Object.assign(modelFields(model, null, PAGE_SCHEMA), {
       max_tokens: 16000,
       system: systemPrompt(kb, styleExamples),
       messages: [{

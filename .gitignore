@@ -5,3 +5,4 @@ desktop.ini
 *.swp
 .vscode/
 test/out.xlsx
+test/sweep-out.json
