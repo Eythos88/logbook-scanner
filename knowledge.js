@@ -63,18 +63,16 @@ Shift change happens at 11:45 / 23:45 after a pre-shift meeting at 11:30 / 23:30
 The day opens "Begin this day …" at 00:00 and closes "End this day …" at 24:00.`,
 
     ops:
-`# Operation playbooks — the critical points of each operation, in order.
-# Write each step's line in this wording. {ID} = the asset's ID, {ROV} = the ROV for the page.
-# Add a playbook for any operation you run: a "## name — asset: …" line, then numbered steps.
+`# Operation milestones — the major milestones of each operation, in order.
+# Write each milestone's line in this wording. {ID} = the asset's ID, {ROV} = the ROV for the page.
+# Add any operation you run: a "## name — asset: …" line, then its numbered milestones.
 
 ## Mattress installation — asset: mattress ID (e.g. F21, B4)
-1. Crane off deck with mattress {ID}.
-2. Visual inspection of mattress {ID} and rigging check complete.
-3. Vessel in position; begin installation of mattress {ID}.
-4. Mattress {ID} landed; green light given to release.
-5. Mattress {ID} released.
-6. {ROV} in the safe operating zone for crane recovery.
-7. Crane on deck.`,
+1. Visual inspection of mattress {ID} complete; rigging inspection complete.
+2. Vessel moving into deployment position; begin installation of mattress {ID}.
+3. Mattress {ID} landed; green light given to release.
+4. Mattress {ID} released; vessel moving to the safe operating zone.
+5. Vessel in the safe operating zone; rigging inspection complete; crane released to deck.`,
 
     tooling:
 `# General ROV tooling
@@ -113,6 +111,19 @@ T4 filter = ?`,
   // Previous starter text (seed v1). A section still exactly equal to this was never edited,
   // so the app swaps it for the new default; edited sections are left alone.
   const LEGACY_KNOWLEDGE = {
+    ops:
+`# Operation playbooks — the critical points of each operation, in order.
+# Write each step's line in this wording. {ID} = the asset's ID, {ROV} = the ROV for the page.
+# Add a playbook for any operation you run: a "## name — asset: …" line, then numbered steps.
+
+## Mattress installation — asset: mattress ID (e.g. F21, B4)
+1. Crane off deck with mattress {ID}.
+2. Visual inspection of mattress {ID} and rigging check complete.
+3. Vessel in position; begin installation of mattress {ID}.
+4. Mattress {ID} landed; green light given to release.
+5. Mattress {ID} released.
+6. {ROV} in the safe operating zone for crane recovery.
+7. Crane on deck.`,
     abbrev:
 `# Standard DPR abbreviations — keep these AS abbreviations in the DPR.
 TMS = Tether Management System
@@ -152,7 +163,7 @@ Shift change happens at 11:45 / 23:45 after a pre-shift meeting at 11:30 / 23:30
 The day opens "Begin this day, …" at 00:00 and closes "End this day, …" at 24:00.`,
 
   };
-  const SEED_VERSION = 3;   // v3 added the operation playbooks section
+  const SEED_VERSION = 4;   // v3 added operation playbooks; v4 = Mike's five mattress milestones
 
   root.KB = { ROVS, KNOWLEDGE, STYLE_EXAMPLES, LEGACY_KNOWLEDGE, SEED_VERSION };
 })(typeof self !== 'undefined' ? self : this);

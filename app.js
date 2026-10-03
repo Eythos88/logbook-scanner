@@ -224,6 +224,7 @@ async function processQueue(){
         fixText: (r.fix_text || '').trim(), fixTime: DPR.parseTime(r.fix_time) == null ? '' : DPR.fmtTime(r.fix_time),
         termSugg: (r.term_suggestions || []).filter(s => s && s.term),
         op: (r.operation || '').trim(), step: Number(r.step) || 0, asset: (r.asset || '').trim(),
+        parts: Array.isArray(r.milestone_parts) ? r.milestone_parts.map(Number).filter(n => n > 0) : null,
       }));
       entries.push(...added); saveEntries();
       await qDel(p.id);
@@ -267,9 +268,13 @@ function stillUnknown(e){
 /** Every flag on a line → [{ text, kind, soft }]. kind 'unclear' / 'unknown' can be dismissed. */
 function flagsFor(e, outOfOrder){
   const f = [];
+  const pm = partials.get(e.id);
+  if (pm && !(e.dismissed || []).includes('partial'))
+    f.push({ kind: 'partial', text: `${pm.asset}: milestone ${pm.step} incomplete — not logged: ` +
+      pm.missing.map(x => `“${fillStep(x.p, pm.asset, pm.rov)}”`).join(', ') });
   const g = gaps.get(e.id);
   if (g && !(e.dismissed || []).includes('gap')){
-    const names = g.gap.map(x => `step ${x.step} — “${fillStep(x.text, g.asset, g.rov)}”`).join(', ');
+    const names = g.gap.map(x => `milestone ${x.step} — “${fillStep(x.text, g.asset, g.rov)}”`).join(', ');
     f.push({ kind: 'gap', text: `${g.asset}: missing ${names}` });
   }
   const unk = stillUnknown(e);
@@ -281,7 +286,7 @@ function flagsFor(e, outOfOrder){
   return f;
 }
 
-/* ---------- operation playbooks: missing critical points ---------- */
+/* ---------- operation milestones: missing milestones ---------- */
 /** "## Mattress installation — asset: …" + "1. …" lines → Map(name → [step text, …]) */
 function parsePlaybooks(text){
   const books = new Map(); let cur = null;
@@ -293,7 +298,7 @@ function parsePlaybooks(text){
   }
   return books;
 }
-/** For the day's lines: entry id → [{ step, text }] of playbook steps missing just before that line. */
+/** For the day's lines: entry id → [{ step, text }] of milestones missing just before that line. */
 function missingSteps(list){
   const books = parsePlaybooks(settings.kb.ops);
   const out = new Map();
@@ -316,15 +321,41 @@ function missingSteps(list){
   return out;
 }
 const fillStep = (t, asset, rov) => t.replace(/\{ID\}/g, asset).replace(/\{ROV\}/g, rov);
+/** "A; B; C." → ["A", "B", "C"] */
+const milestoneParts = (t) => String(t || '').replace(/\.\s*$/, '').split(';').map(s => s.trim()).filter(Boolean);
+/** entry id → { missing: [part text], asset, rov } for milestones logged only in part (flag goes on the milestone's last line). */
+function incompleteMilestones(list){
+  const books = parsePlaybooks(settings.kb.ops);
+  const groups = new Map();                       // "op|asset|step" → [entries]
+  for (const e of list){
+    if (!e.op || !e.asset || !e.step || !Array.isArray(e.parts)) continue;   // lines read before parts existed: skip
+    const k = `${e.op.toLowerCase()}|${e.asset.toUpperCase()}|${e.step}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(e);
+  }
+  const out = new Map();
+  for (const [k, es] of groups){
+    const [op, , step] = k.split('|');
+    const text = (books.get(op) || [])[+step - 1]; if (!text) continue;
+    const parts = milestoneParts(text);
+    const covered = new Set(es.flatMap(e => e.parts));
+    const missing = parts.map((p, i) => ({ n: i + 1, p })).filter(x => !covered.has(x.n));
+    const last = es[es.length - 1];
+    if (missing.length) out.set(last.id, { missing, asset: last.asset, rov: last.rov, step: +step });
+  }
+  return out;
+}
 
 let cardState = new Map();   // entry id → { e, card, outOfOrder, paint }
-let gaps = new Map();        // entry id → missing playbook steps just before it
+let gaps = new Map();        // entry id → milestones missing just before it
+let partials = new Map();    // entry id → parts of its milestone not logged
 
 function renderEntries(){
   const list = dayEntries(view.day, view.rov);
   els.count.textContent = `${list.length} line${list.length === 1 ? '' : 's'}`;
   cardState = new Map();
   gaps = missingSteps(list);
+  partials = incompleteMilestones(list);
   if (list.length === 0){
     els.entries.innerHTML = '<div class="empty">No lines for this ROV and day yet. Tap Scan a page.</div>';
     renderFlagSummary();
@@ -408,6 +439,15 @@ function fixFor(e, f){
         saveSettings(); renderSettings();
       } };
   }
+  if (f.kind === 'partial'){
+    const pm = partials.get(e.id);
+    const add = pm.missing.map(x => fillStep(x.p, pm.asset, pm.rov));
+    const next = e.text.replace(/\.\s*$/, '') + '; ' + add.join('; ') + '.';
+    return { rec: `Add to this line: “${next}”. Or tap OK if it really wasn’t done.`, btn: 'Add', apply(){
+      e.text = next;
+      e.parts = Array.from(new Set((e.parts || []).concat(pm.missing.map(x => x.n)))).sort((a, b) => a - b);
+    } };
+  }
   if (f.kind === 'gap'){
     const g = gaps.get(e.id);
     const lines = g.gap.map(x => fillStep(x.text, g.asset, g.rov));
@@ -416,7 +456,8 @@ function fixFor(e, f){
       btn: 'Insert', apply(){
         const at = entries.indexOf(e);
         const add = g.gap.map(x => ({ id: uid(), rov: e.rov, day: e.day, time: '', raw: '', text: fillStep(x.text, g.asset, g.rov),
-          unclear: false, note: '', unknown: [], op: e.op, step: x.step, asset: g.asset }));
+          unclear: false, note: '', unknown: [], op: e.op, step: x.step, asset: g.asset,
+          parts: milestoneParts(x.text).map((_, i) => i + 1) }));
         entries.splice(at, 0, ...add);
       } };
   }
@@ -514,7 +555,7 @@ function renderFlagSummary(){
       `<span class="flag-why">${esc(f.text)}</span><span class="flag-line">${esc(e.text.slice(0, 60))}${e.text.length > 60 ? '…' : ''}</span></button>` +
       '<div class="flag-acts">' +
         (fx && fx.btn ? `<button class="flag-fix">${esc(fx.btn)}</button>` : '') +
-        (f.kind === 'unclear' || f.kind === 'unknown' || f.kind === 'gap' ? '<button class="flag-ok" aria-label="Mark as checked">OK</button>' : '') +
+        (['unclear', 'unknown', 'gap', 'partial'].includes(f.kind) ? '<button class="flag-ok" aria-label="Mark as checked">OK</button>' : '') +
       '</div>' +
       (fx ? `<p class="flag-rec">${esc(fx.rec)}</p>` : '');
     li.querySelector('.flag-go').addEventListener('click', () => {
@@ -531,7 +572,7 @@ function renderFlagSummary(){
     const ok = li.querySelector('.flag-ok');
     if (ok) ok.addEventListener('click', () => {
       if (f.kind === 'unclear') e.unclear = false;
-      else if (f.kind === 'gap') e.dismissed = (e.dismissed || []).concat('gap');
+      else if (f.kind === 'gap' || f.kind === 'partial') e.dismissed = (e.dismissed || []).concat(f.kind);
       else e.unknown = [];
       saveEntries(); cardState.get(e.id)?.paint(); renderFlagSummary();
     });
@@ -583,7 +624,7 @@ async function importKb(file){
   if (!file) return;
   let data;
   try { data = JSON.parse(await file.text()); } catch { data = null; }
-  if (!data || data.type !== KB_FILE_TYPE || !data.kb || !KB_KEYS.filter(k => k !== 'ops').every(k => typeof data.kb[k] === 'string')){   // lists shared before playbooks have no ops
+  if (!data || data.type !== KB_FILE_TYPE || !data.kb || !KB_KEYS.filter(k => k !== 'ops').every(k => typeof data.kb[k] === 'string')){   // lists shared before milestones existed have no ops
     setStatus('That file is not a master list from this app.', 'err'); return;
   }
   // merge theirs INTO mine: add what I'm missing, fill my "?" terms, never overwrite my meanings
